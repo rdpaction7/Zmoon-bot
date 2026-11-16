@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function adminEmail() {
+      return signedIn() && request.auth.token.email == 'tanishqlalwani202@gmail.com';
+    }
+
+    function unchanged(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] == resource.data[field];
+    }
+
+    // Users may edit their own profile. Role and account status are never
+    // self-assignable; only the admin email allowlist can create an admin.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isSelf(uid)
+        && request.resource.data.id == uid
+        && (
+          request.resource.data.role == 'user'
+          || (request.resource.data.role == 'admin' && adminEmail())
+        );
+      allow update: if isSelf(uid)
+        && unchanged('role')
+        && unchanged('status')
+        && unchanged('email');
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /streaks/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow write: if isSelf(uid) || isAdmin();
+    }
+
+    match /rewardClaims/{claimId} {
+      allow read: if isAdmin() || claimId.matches(request.auth.uid + '.*');
+      allow create: if signedIn() && claimId.matches(request.auth.uid + '.*');
+      allow update, delete: if isAdmin();
+    }
+
+    match /usernames/{username} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /skills/{skillId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if signedIn()
+        && (
+          (resource.data.ownerId == request.auth.uid && unchanged('status') && unchanged('ownerId'))
+          || isAdmin()
+          || (request.resource.data.status == 'pending'
+              && resource.data.ownerId == request.auth.uid)
+        );
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /skillCategories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /swapRequests/{swapId} {
+      allow read: if signedIn()
+        && (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId != request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if signedIn()
+        && (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /courses/{courseId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.creatorId == request.auth.uid
+        && request.resource.data.status == 'draft'
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.price <= 50;
+      allow update: if signedIn()
+        && (
+          // creators edit their own course but cannot approve it themselves
+          (resource.data.creatorId == request.auth.uid && (
+            (request.resource.data.status in ['draft', 'pending']
+              && request.resource.data.price >= 0
+              && request.resource.data.price <= 50)
+            || request.resource.data.status == resource.data.status
+          ))
+          // any signed-in learner may bump counters through enrolment
+          || (isAdmin())
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /coinTransactions/{transactionId} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if signedIn();
+      allow update: if signedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      allow create: if signedIn() && request.auth.uid in request.resource.data.participants;
+      allow update: if signedIn() && request.auth.uid in resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+        allow create: if signedIn()
+          && request.resource.data.senderId == request.auth.uid
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+      }
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn() && request.resource.data.reporterId == request.auth.uid;
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /adminAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+  }
+}
