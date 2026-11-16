@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import { clampPrice, listCategories, listCourses, saveCourse, submitCourse } from "../lib/api";
 import type { Course, SkillCategory } from "../lib/types";
+import { str, titleOf } from "../lib/text";
 import { MediaUploader } from "../components/MediaUploader";
 import {
   Badge,
@@ -271,8 +272,8 @@ export default function Studio() {
                 <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} coins`}</Badge>
                 <Badge tone="neutral">{course.enrollmentCount || 0} enrolled</Badge>
               </div>
-              <h2>{course.title}</h2>
-              <p className="muted small clamp-3">{course.description}</p>
+              <h2>{titleOf(course.title)}</h2>
+              <p className="muted small clamp-3">{str(course.description)}</p>
               <div className="row">
                 <Button size="sm" variant="secondary" onClick={() => startEdit(course)}>
                   Edit

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listAllUsers, listCourses, listSkills } from "../lib/api";
 import type { Course } from "../lib/types";
+import { str, titleOf } from "../lib/text";
 import { Badge } from "../components/ui";
 
 const PRINCIPLES = [
@@ -165,7 +166,9 @@ export default function Landing() {
                   {course.thumbnailUrl ? (
                     <img src={course.thumbnailUrl} alt="" loading="lazy" />
                   ) : (
-                    <span className="thumb-fallback">{course.title.slice(0, 2).toUpperCase()}</span>
+                    <span className="thumb-fallback">
+                      {titleOf(course.title).slice(0, 2).toUpperCase()}
+                    </span>
                   )}
                 </div>
                 <div className="course-body">
@@ -173,8 +176,8 @@ export default function Landing() {
                     <Badge>{course.category}</Badge>
                     <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} coins`}</Badge>
                   </div>
-                  <h3>{course.title}</h3>
-                  <p className="muted small">by {course.creatorName}</p>
+                  <h3>{titleOf(course.title)}</h3>
+                  <p className="muted small">by {str(course.creatorName, "a member")}</p>
                 </div>
               </Link>
             ))}

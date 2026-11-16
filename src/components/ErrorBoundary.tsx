@@ -12,6 +12,10 @@ interface State {
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
   state: State = { error: null };
 
+  private get path() {
+    return typeof window === "undefined" ? "" : window.location.pathname;
+  }
+
   static getDerivedStateFromError(error: Error): State {
     return { error };
   }
@@ -27,13 +31,22 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
         <div className="card card-pad error-boundary">
           <span className="eyebrow">Something broke</span>
           <h1>This page hit an unexpected error</h1>
+          <p className="muted small">
+            Page: <code>{this.path}</code>
+          </p>
           <p className="muted">
             The rest of SkillSwap is still fine. Reload to get back to a working view — if it keeps
             happening, the error below helps track it down.
           </p>
           <pre className="error-boundary-detail">{this.state.error.message}</pre>
           <div className="row">
-            <button className="btn btn-primary" onClick={() => window.location.reload()}>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                this.setState({ error: null });
+                window.location.reload();
+              }}
+            >
               Reload
             </button>
             <a className="btn btn-secondary" href="/">

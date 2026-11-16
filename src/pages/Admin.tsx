@@ -25,6 +25,7 @@ import type {
   SkillCategory,
   UserProfile,
 } from "../lib/types";
+import { str, titleOf } from "../lib/text";
 import {
   Badge,
   Button,
@@ -197,10 +198,10 @@ export default function Admin() {
                 {filteredUsers.slice(0, 100).map((entry) => (
                   <div className="table-row" key={entry.id}>
                     <span>
-                      <strong>{entry.displayName}</strong>
+                      <strong>{str(entry.displayName, "Member")}</strong>
                       <br />
                       <span className="muted small">
-                        @{entry.username} · {entry.email}
+                        @{str(entry.username, "member")} · {str(entry.email, "no email")}
                       </span>
                     </span>
                     <span>{entry.role}</span>
@@ -246,9 +247,9 @@ export default function Admin() {
                   {skills.map((skill) => (
                     <div className="list-row" key={skill.id}>
                       <div>
-                        <strong className="small">{skill.title}</strong>
+                        <strong className="small">{titleOf(skill.title)}</strong>
                         <p className="muted small">
-                          {skill.ownerName} · {skill.category} · {skill.status}
+                          {str(skill.ownerName, "a member")} · {skill.category} · {skill.status}
                         </p>
                       </div>
                       <div className="row">
@@ -339,10 +340,10 @@ export default function Admin() {
                 {courses.map((course) => (
                   <div className="list-row" key={course.id}>
                     <div>
-                      <strong className="small">{course.title}</strong>
+                      <strong className="small">{titleOf(course.title)}</strong>
                       <p className="muted small">
-                        {course.creatorName} · {course.price === 0 ? "Free" : `${course.price} coins`} ·{" "}
-                        {course.status}
+                        {str(course.creatorName, "a member")} ·{" "}
+                        {course.price === 0 ? "Free" : `${course.price} coins`} · {course.status}
                       </p>
                     </div>
                     <div className="row">

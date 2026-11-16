@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listCategories, listCourses } from "../lib/api";
 import type { Course, SkillCategory } from "../lib/types";
+import { str, titleOf } from "../lib/text";
 import { Badge, Button, EmptyState, Input, Select, Skeleton } from "../components/ui";
 
 export default function Courses() {
@@ -114,7 +115,7 @@ export default function Courses() {
                 {course.thumbnailUrl ? (
                   <img src={course.thumbnailUrl} alt="" />
                 ) : (
-                  <span className="thumb-fallback">{course.title.slice(0, 2).toUpperCase()}</span>
+                  <span className="thumb-fallback">{titleOf(course.title).slice(0, 2).toUpperCase()}</span>
                 )}
               </div>
               <div className="course-body">
@@ -123,10 +124,10 @@ export default function Courses() {
                   <Badge tone="neutral">{course.level}</Badge>
                   <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} coins`}</Badge>
                 </div>
-                <h3>{course.title}</h3>
-                <p className="muted small clamp-3">{course.description}</p>
+                <h3>{titleOf(course.title)}</h3>
+                <p className="muted small clamp-3">{str(course.description)}</p>
                 <p className="muted small">
-                  {course.creatorName} · {course.enrollmentCount || 0} enrolled
+                  {str(course.creatorName, "a member")} · {course.enrollmentCount || 0} enrolled
                 </p>
               </div>
             </Link>

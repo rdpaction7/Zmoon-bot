@@ -88,7 +88,7 @@ export async function updateProfile(uid: string, patch: Partial<UserProfile>): P
 }
 
 export async function getProfileByUsername(username: string): Promise<UserProfile | null> {
-  const index = await getDoc(doc(db, "usernames", username.toLowerCase()));
+  const index = await getDoc(doc(db, "usernames", String(username || "").toLowerCase()));
   if (!index.exists()) return null;
   return getProfile(index.data().uid);
 }
@@ -726,7 +726,9 @@ export async function runAdminCommand(admin: UserProfile, raw: string): Promise<
       ok: true,
       output: users.map(
         (user) =>
-          `${user.id}  @${user.username}  ${user.displayName}  ${user.email}  ${user.balance} coins  ${user.role}`,
+          `${user.id}  @${user.username || "—"}  ${user.displayName || "(no name)"}  ${
+            user.email || "(no email)"
+          }  ${Number(user.balance ?? 0)} coins  ${user.role || "user"}`,
       ),
     };
   }
@@ -744,9 +746,9 @@ export async function runAdminCommand(admin: UserProfile, raw: string): Promise<
     const key = target.replace(/^#/, "").toLowerCase();
     const matches = users.filter(
       (user) =>
-        user.id.toLowerCase() === key ||
-        user.username.toLowerCase() === key ||
-        user.email.toLowerCase() === key,
+        String(user.id || "").toLowerCase() === key ||
+        String(user.username || "").toLowerCase() === key ||
+        String(user.email || "").toLowerCase() === key,
     );
     if (key === "me") matches.push(admin);
     if (matches.length === 0) return { ok: false, output: [`No user matches "${target}".`] };
@@ -758,7 +760,7 @@ export async function runAdminCommand(admin: UserProfile, raw: string): Promise<
     }
     const user = matches[0];
     const delta = name === "/givem" ? amount : -amount;
-    const before = user.balance;
+    const before = Number(user.balance ?? 0);
 
     try {
       await runTransaction(db, async (tx) => {
@@ -766,7 +768,7 @@ export async function runAdminCommand(admin: UserProfile, raw: string): Promise<
         const snap = await tx.get(ref);
         const balance = Number(snap.data()?.balance || 0);
         if (balance + delta < 0) {
-          throw new Error(`@${user.username} only has ${balance} Skill Coins.`);
+          throw new Error(`@${user.username || user.id} only has ${balance} Skill Coins.`);
         }
         tx.update(ref, { balance: balance + delta, updatedAt: nowIso() });
         tx.set(doc(collection(db, "coinTransactions")), {

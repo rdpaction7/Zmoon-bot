@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import { getCourse, listEnrollments } from "../lib/api";
 import type { Course, Enrollment } from "../lib/types";
+import { str, titleOf } from "../lib/text";
 import { Badge, Card, EmptyState, Skeleton } from "../components/ui";
 
 export default function Library() {
@@ -61,9 +62,9 @@ export default function Library() {
                 <Badge tone="positive">Enrolled</Badge>
                 <Badge tone="accent">{enrollment.pricePaid === 0 ? "Free" : `${enrollment.pricePaid} coins`}</Badge>
               </div>
-              <h2>{course ? course.title : "Course no longer available"}</h2>
-              {course && <p className="muted small">by {course.creatorName}</p>}
-              {course && <p className="muted small clamp-3">{course.description}</p>}
+              <h2>{course ? titleOf(course.title) : "Course no longer available"}</h2>
+              {course && <p className="muted small">by {str(course.creatorName, "a member")}</p>}
+              {course && <p className="muted small clamp-3">{str(course.description)}</p>}
               {course && (
                 <div className="row">
                   <Link className="btn btn-secondary btn-sm" to={`/courses/${course.id}`}>

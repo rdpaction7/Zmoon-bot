@@ -10,6 +10,7 @@ import {
   listAllUsers,
 } from "../lib/api";
 import type { Skill, SkillCategory, UserProfile } from "../lib/types";
+import { slug, str, titleOf } from "../lib/text";
 import { useAuth } from "../state/AuthContext";
 import {
   Avatar,
@@ -251,12 +252,12 @@ export default function Explore() {
                 <Badge tone="neutral">{skill.level}</Badge>
                 {skill.status !== "approved" && <Badge tone="warning">{skill.status}</Badge>}
               </div>
-              <h3>{skill.title}</h3>
+              <h3>{titleOf(skill.title, "Untitled skill")}</h3>
               <p className="muted small clamp-3">{skill.description}</p>
               <div className="between creator-row">
                 <span className="row small">
-                  <Avatar name={skill.ownerName} size={26} />
-                  {skill.ownerName}
+                  <Avatar name={str(skill.ownerName, "Member")} size={26} />
+                  {str(skill.ownerName, "Member")}
                 </span>
                 <Button size="sm" variant="secondary" onClick={() => setActive(skill)}>
                   View
@@ -324,7 +325,7 @@ export default function Explore() {
 
       <Modal
         open={Boolean(active)}
-        title={active?.title || "Skill"}
+        title={titleOf(active?.title, "Skill")}
         onClose={() => setActive(null)}
         footer={
           <>
@@ -344,8 +345,8 @@ export default function Explore() {
               <Badge tone="neutral">{active.level}</Badge>
             </div>
             <p>{active.description}</p>
-            <Link className="link" to={`/u/${active.ownerName.toLowerCase().replace(/[^a-z0-9_]/g, "")}`}>
-              View {active.ownerName}'s profile →
+            <Link className="link" to={`/u/${slug(active.ownerName)}`}>
+              View {str(active.ownerName, "this member")}'s profile →
             </Link>
             {isDemo ? (
               <p className="muted small">Demo accounts cannot send swap requests.</p>

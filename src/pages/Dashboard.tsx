@@ -10,6 +10,7 @@ import {
   listSwaps,
 } from "../lib/api";
 import type { AppNotification, Course, Enrollment, Skill, Streak, SwapRequest } from "../lib/types";
+import { firstName, slug, titleOf } from "../lib/text";
 import { Badge, Button, Card, Skeleton, Stat } from "../components/ui";
 
 export default function Dashboard() {
@@ -67,7 +68,7 @@ export default function Dashboard() {
       <header className="section-head between">
         <div>
           <span className="eyebrow">Dashboard</span>
-          <h1>Hello, {user.displayName.split(" ")[0]}</h1>
+          <h1>Hello, {firstName(user.displayName)}</h1>
           <p className="muted">
             {user.demo
               ? "You are browsing as a demo visitor."
@@ -183,7 +184,7 @@ export default function Dashboard() {
                       {course.thumbnailUrl ? (
                         <img src={course.thumbnailUrl} alt="" />
                       ) : (
-                        <span className="thumb-fallback">{course.title.slice(0, 2).toUpperCase()}</span>
+                        <span className="thumb-fallback">{slug(course.title).slice(0, 2).toUpperCase()}</span>
                       )}
                     </div>
                     <div className="course-body">
@@ -191,7 +192,7 @@ export default function Dashboard() {
                         <Badge>{course.category}</Badge>
                         <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} coins`}</Badge>
                       </div>
-                      <h3>{course.title}</h3>
+                      <h3>{titleOf(course.title)}</h3>
                       <p className="muted small">by {course.creatorName}</p>
                     </div>
                   </Link>

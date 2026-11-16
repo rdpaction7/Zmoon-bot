@@ -3,6 +3,7 @@ import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import { Avatar, Button, Skeleton } from "./ui";
 import { listNotifications } from "../lib/api";
+import { slug, str } from "../lib/text";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard" },
@@ -116,18 +117,18 @@ export function TopNav() {
                   aria-haspopup="menu"
                   aria-label="Account menu"
                 >
-                  <Avatar name={user.displayName} src={user.photoURL} size={34} />
+                  <Avatar name={str(user.displayName, "Member")} src={user.photoURL} size={34} />
                 </button>
                 {menuOpen && (
                   <div className="menu" role="menu">
                     <div className="menu-head">
-                      <strong>{user.displayName}</strong>
-                      <span className="muted small">@{user.username}</span>
+                      <strong>{str(user.displayName, "Member")}</strong>
+                      <span className="muted small">@{str(user.username, "member")}</span>
                       <span className="badge badge-accent" style={{ marginTop: 6 }}>
                         {user.balance} Skill Coins
                       </span>
                     </div>
-                    <Link className="menu-item" to={`/u/${user.username}`} role="menuitem">
+                    <Link className="menu-item" to={`/u/${slug(user.username)}`} role="menuitem">
                       My profile
                     </Link>
                     <Link className="menu-item" to="/studio" role="menuitem">

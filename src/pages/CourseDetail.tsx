@@ -10,6 +10,7 @@ import {
   saveReview,
 } from "../lib/api";
 import type { Course, Review } from "../lib/types";
+import { slug, str, titleOf } from "../lib/text";
 import {
   Badge,
   Button,
@@ -170,7 +171,7 @@ export default function CourseDetail() {
           {course.thumbnailUrl ? (
             <img src={course.thumbnailUrl} alt="" />
           ) : (
-            <span className="thumb-fallback large">{course.title.slice(0, 2).toUpperCase()}</span>
+            <span className="thumb-fallback large">{slug(course.title).slice(0, 2).toUpperCase()}</span>
           )}
         </div>
         <div className="course-hero-copy">
@@ -180,15 +181,12 @@ export default function CourseDetail() {
             <Badge tone={isPublic ? "positive" : "warning"}>{course.status}</Badge>
             <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} Skill Coins`}</Badge>
           </div>
-          <h1>{course.title}</h1>
+          <h1>{titleOf(course.title)}</h1>
           <div className="row wrap">
             <span className="muted">
               by{" "}
-              <Link
-                className="link"
-                to={`/u/${course.creatorName.toLowerCase().replace(/[^a-z0-9_]/g, "")}`}
-              >
-                {course.creatorName}
+              <Link className="link" to={`/u/${slug(course.creatorName)}`}>
+                {str(course.creatorName, "Member")}
               </Link>
             </span>
             <span className="muted small">·</span>
@@ -321,7 +319,7 @@ export default function CourseDetail() {
         }
       >
         <p>
-          <strong>{course.title}</strong> by {course.creatorName}.
+          <strong>{titleOf(course.title)}</strong> by {str(course.creatorName, "this member")}.
         </p>
         <p className="muted small">
           {course.price === 0

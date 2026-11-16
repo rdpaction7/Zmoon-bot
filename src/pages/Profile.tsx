@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import { getProfileByUsername, listCourses, listSkills } from "../lib/api";
 import type { Course, Skill, UserProfile as ProfileType } from "../lib/types";
+import { firstName, slug, str, titleOf } from "../lib/text";
 import { Avatar, Badge, Button, Card, EmptyState, Skeleton } from "../components/ui";
 
 export default function Profile() {
@@ -74,14 +75,17 @@ export default function Profile() {
   return (
     <div className="page">
       <Card className="card-pad profile-head">
-        <Avatar name={profile.displayName} src={profile.photoURL} size={84} />
+        <Avatar name={str(profile.displayName, "Member")} src={profile.photoURL} size={84} />
         <div>
           <div className="pill-row">
-            <h1>{profile.displayName}</h1>
+            <h1>{str(profile.displayName, "Member")}</h1>
             {profile.role === "admin" && <Badge tone="accent">admin</Badge>}
             {profile.demo && <Badge tone="neutral">demo</Badge>}
           </div>
-          <p className="muted">@{profile.username}{profile.location ? ` · ${profile.location}` : ""}</p>
+          <p className="muted">
+            @{str(profile.username, "member")}
+            {profile.location ? ` · ${profile.location}` : ""}
+          </p>
           {profile.bio && <p>{profile.bio}</p>}
           <div className="row">
             <Badge tone="positive">{profile.balance} Skill Coins</Badge>
@@ -139,7 +143,7 @@ export default function Profile() {
       </div>
 
       <section className="section">
-        <h2>Courses by {profile.displayName.split(" ")[0]}</h2>
+        <h2>Courses by {firstName(profile.displayName, "this member")}</h2>
         {courses.length === 0 ? (
           <EmptyState title="No published courses" body="This member has not published a course yet." />
         ) : (
@@ -150,7 +154,7 @@ export default function Profile() {
                   {course.thumbnailUrl ? (
                     <img src={course.thumbnailUrl} alt="" />
                   ) : (
-                    <span className="thumb-fallback">{course.title.slice(0, 2).toUpperCase()}</span>
+                    <span className="thumb-fallback">{slug(course.title).slice(0, 2).toUpperCase()}</span>
                   )}
                 </div>
                 <div className="course-body">
@@ -158,7 +162,7 @@ export default function Profile() {
                     <Badge>{course.category}</Badge>
                     <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} coins`}</Badge>
                   </div>
-                  <h3>{course.title}</h3>
+                  <h3>{titleOf(course.title)}</h3>
                 </div>
               </Link>
             ))}
