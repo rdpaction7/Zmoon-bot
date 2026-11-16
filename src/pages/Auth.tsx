@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import { Button, ErrorText, Field, Input, useToast } from "../components/ui";
+import { Icon } from "../components/icons";
 
 const FRIENDLY: Record<string, string> = {
   "auth/invalid-email": "That email address does not look right.",
@@ -28,7 +29,9 @@ export default function Auth({ mode }: { mode: "login" | "signup" | "reset" }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { push } = useToast();
-  const next = params.get("next") || "/dashboard";
+  const rawNext = params.get("next") || "/dashboard";
+  // Only allow same-origin, path-based redirects (no //evil.example open redirects).
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,6 +40,7 @@ export default function Auth({ mode }: { mode: "login" | "signup" | "reset" }) {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [demoBusy, setDemoBusy] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -74,7 +78,7 @@ export default function Auth({ mode }: { mode: "login" | "signup" | "reset" }) {
 
   async function demo() {
     setError("");
-    setBusy(true);
+    setDemoBusy(true);
     try {
       await startDemo();
       push("Browsing as a demo visitor — everything is read-only.", "info");
@@ -82,13 +86,56 @@ export default function Auth({ mode }: { mode: "login" | "signup" | "reset" }) {
     } catch (caught: any) {
       setError(friendly(caught));
     } finally {
-      setBusy(false);
+      setDemoBusy(false);
     }
   }
 
   return (
     <div className="auth-page">
-      <div className="auth-card card card-pad">
+      <div className="auth-shell">
+        <aside className="auth-aside">
+          <span className="eyebrow">A learning community</span>
+          <h2>
+            Teach what you know.
+            <br />
+            Learn what you <em>don't</em>.
+          </h2>
+          <p className="muted">
+            Swap skills one-to-one for free, or publish a course and let learners come to you. No
+            subscriptions, no fees on conversations.
+          </p>
+          <div className="auth-aside-features">
+            <div className="auth-aside-feature">
+              <span className="auth-aside-feature-icon">
+                <Icon name="swap" />
+              </span>
+              <div>
+                <strong>Swaps stay free</strong>
+                <span>Coins only ever price paid courses — never a conversation.</span>
+              </div>
+            </div>
+            <div className="auth-aside-feature">
+              <span className="auth-aside-feature-icon">
+                <Icon name="shield" />
+              </span>
+              <div>
+                <strong>Your work is yours</strong>
+                <span>Courses, files and reviews stay with the member who made them.</span>
+              </div>
+            </div>
+            <div className="auth-aside-feature">
+              <span className="auth-aside-feature-icon">
+                <Icon name="sparkles" />
+              </span>
+              <div>
+                <strong>Honest by default</strong>
+                <span>Real numbers, human moderation and no invented progress.</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div className="auth-card card card-pad">
         <h1>
           {mode === "login" ? "Welcome back" : mode === "signup" ? "Join SkillSwap" : "Reset password"}
         </h1>
@@ -185,12 +232,13 @@ export default function Auth({ mode }: { mode: "login" | "signup" | "reset" }) {
 
         <div className="divider" />
 
-        <Button variant="secondary" onClick={demo} loading={busy} className="full">
+        <Button variant="secondary" onClick={demo} loading={demoBusy} disabled={busy} className="full">
           Explore the demo (read-only)
         </Button>
         <p className="muted small center">
           Demo visitors can browse and open free courses but cannot sell, upload, buy or swap.
         </p>
+        </div>
       </div>
     </div>
   );

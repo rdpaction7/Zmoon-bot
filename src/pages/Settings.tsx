@@ -12,6 +12,7 @@ import {
 import { GITHUB_CONFIG } from "../App";
 import {
   Badge,
+  Avatar,
   Button,
   Card,
   ErrorText,
@@ -113,10 +114,19 @@ export default function Settings() {
     setGhError("");
     setService("");
     setGhBusy(true);
+    // Test what is currently in the form, not the last saved values.
+    const candidate = {
+      token: gh.token.trim(),
+      owner: gh.owner.trim(),
+      repo: gh.repo.trim(),
+      prefix: gh.prefix.trim() || "skillswap-media",
+      maxAssets: Math.max(1, Math.min(1000, Number(gh.maxAssets) || 1000)),
+      uploadUrl: gh.uploadUrl.trim().replace(/\/$/, ""),
+    };
     try {
       const [serviceResult, connection] = await Promise.allSettled([
-        uploadServiceHealth(settings),
-        verifyConnection(settings),
+        uploadServiceHealth(candidate),
+        verifyConnection(candidate),
       ]);
       if (serviceResult.status === "fulfilled") {
         setService(
@@ -128,8 +138,8 @@ export default function Settings() {
       if (connection.status === "fulfilled") {
         setGhStatus(connection.value);
         const [storage, media] = await Promise.all([
-          storageStats(settings).catch(() => null),
-          listMedia(settings, 12).catch(() => []),
+          storageStats(candidate).catch(() => null),
+          listMedia(candidate, 12).catch(() => []),
         ]);
         if (storage) setStats(storage);
         setAssets(media);
@@ -170,6 +180,19 @@ export default function Settings() {
             <Badge tone={isDemo ? "warning" : "positive"}>{isDemo ? "demo · read-only" : "live"}</Badge>
           </div>
           {isDemo && <p className="muted small">Demo accounts are read-only — changes will not be saved.</p>}
+          <div className="row" style={{ alignItems: "flex-start" }}>
+            <Avatar
+              name={form.displayName || user.displayName || "Member"}
+              src={form.photoURL || user.photoURL}
+              size={56}
+            />
+            <div style={{ minWidth: 0 }}>
+              <strong>{form.displayName || "Your name"}</strong>
+              <p className="muted small" style={{ margin: 0 }}>
+                {form.bio ? form.bio.slice(0, 120) : "Add a short bio so members know what you teach."}
+              </p>
+            </div>
+          </div>
           <form className="form-grid" onSubmit={saveProfile}>
             <Field label="Display name">
               <Input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />

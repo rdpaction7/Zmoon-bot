@@ -3,10 +3,13 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Link } from "react-router-dom";
+import { Icon, type IconName } from "./icons";
 
 /* --------------------------------------------------------------------- button */
 
@@ -42,14 +45,16 @@ export function LinkButton({
   children,
   variant = "primary",
   size = "md",
+  className = "",
 }: {
   to: string;
   children: React.ReactNode;
   variant?: "primary" | "secondary" | "ghost";
   size?: "sm" | "md";
+  className?: string;
 }) {
   return (
-    <Link className={`btn btn-${variant} btn-${size}`} to={to}>
+    <Link className={`btn btn-${variant} btn-${size} ${className}`} to={to}>
       {children}
     </Link>
   );
@@ -104,6 +109,44 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   );
 }
 
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  label,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div className={`search-field ${className}`} role="search">
+      <Icon name="search" />
+      <input
+        className="input"
+        type="search"
+        value={value}
+        placeholder={placeholder}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {value && (
+        <button
+          type="button"
+          className="search-clear"
+          aria-label="Clear search"
+          onClick={() => onChange("")}
+        >
+          <Icon name="close" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ surfaces */
 
 export function Card({
@@ -137,15 +180,36 @@ export function Avatar({
   src?: string;
   size?: number;
 }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
   const initials = String(name || "?")
     .split(/\s+/)
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase();
-  return src ? (
-    <img className="avatar" src={src} alt="" width={size} height={size} style={{ width: size, height: size }} />
-  ) : (
+    .toUpperCase() || "?";
+
+  if (src && !failed) {
+    return (
+      <img
+        className="avatar"
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        decoding="async"
+        style={{ width: size, height: size }}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
     <span
       className="avatar avatar-fallback"
       style={{ width: size, height: size, fontSize: Math.max(11, size / 2.6) }}
@@ -170,13 +234,18 @@ export function EmptyState({
   title,
   body,
   action,
+  icon = "sparkles",
 }: {
   title: string;
   body: string;
   action?: React.ReactNode;
+  icon?: IconName;
 }) {
   return (
     <div className="empty">
+      <span className="empty-icon" aria-hidden="true">
+        <Icon name={icon} />
+      </span>
       <h3>{title}</h3>
       <p>{body}</p>
       {action}
@@ -184,10 +253,29 @@ export function EmptyState({
   );
 }
 
-export function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
+export function Stat({
+  label,
+  value,
+  hint,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  icon?: IconName;
+  tone?: "neutral" | "positive" | "espresso";
+}) {
   return (
     <div className="stat">
-      <span className="stat-label">{label}</span>
+      <div className="stat-top">
+        <span className="stat-label">{label}</span>
+        {icon && (
+          <span className={`stat-icon ${tone && tone !== "neutral" ? `stat-icon-${tone}` : ""}`} aria-hidden="true">
+            <Icon name={icon} />
+          </span>
+        )}
+      </div>
       <strong className="stat-value">{value}</strong>
       {hint && <span className="stat-hint">{hint}</span>}
     </div>
@@ -216,6 +304,7 @@ export function Tabs({
       {tabs.map((tab) => (
         <button
           key={tab.id}
+          type="button"
           role="tab"
           aria-selected={value === tab.id}
           className={`tab ${value === tab.id ? "tab-active" : ""}`}
@@ -227,6 +316,11 @@ export function Tabs({
     </div>
   );
 }
+
+/* --------------------------------------------------------------------- modal */
+
+/** Keeps track of open modals so only the top-most one handles Escape. */
+const openModals: symbol[] = [];
 
 export function Modal({
   open,
@@ -241,10 +335,19 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
-  const panelRef = React.useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const titleId = useId();
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
+    const token = Symbol("modal");
+    openModals.push(token);
+
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -255,11 +358,14 @@ export function Modal({
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ) || [],
       );
-    focusables()[0]?.focus();
+    const timer = window.setTimeout(() => focusables()[0]?.focus(), 30);
 
     const onKey = (event: KeyboardEvent) => {
+      // Nested dialogs: only the most recently opened one reacts.
+      if (openModals[openModals.length - 1] !== token) return;
       if (event.key === "Escape") {
-        onClose();
+        event.stopPropagation();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -278,11 +384,14 @@ export function Modal({
 
     document.addEventListener("keydown", onKey);
     return () => {
+      window.clearTimeout(timer);
+      const index = openModals.lastIndexOf(token);
+      if (index >= 0) openModals.splice(index, 1);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (
@@ -292,13 +401,13 @@ export function Modal({
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="modal-head">
-          <h2>{title}</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">
-            ×
+          <h2 id={titleId}>{title}</h2>
+          <button className="modal-close" onClick={onClose} aria-label="Close dialog">
+            <Icon name="close" />
           </button>
         </header>
         <div className="modal-body">{children}</div>
@@ -315,12 +424,18 @@ const ToastContext = createContext<{ push: (message: string, tone?: Toast["tone"
   null,
 );
 
+const TOAST_ICON: Record<Toast["tone"], IconName> = {
+  success: "check",
+  error: "alert",
+  info: "info",
+};
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const push = useCallback((message: string, tone: Toast["tone"] = "info") => {
     const id = Date.now() + Math.random();
-    setToasts((current) => [...current, { id, message, tone }]);
+    setToasts((current) => [...current.slice(-3), { id, message, tone }]);
     setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 4800);
   }, []);
 
@@ -331,8 +446,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`toast toast-${toast.tone}`}>
-            {toast.message}
+          <div
+            key={toast.id}
+            className={`toast toast-${toast.tone}`}
+            role={toast.tone === "error" ? "alert" : undefined}
+          >
+            <span className="toast-icon" aria-hidden="true">
+              <Icon name={TOAST_ICON[toast.tone]} />
+            </span>
+            <span className="toast-content">{toast.message}</span>
+            <span className="toast-progress" aria-hidden="true" />
           </div>
         ))}
       </div>
@@ -395,16 +518,25 @@ export function ConfirmDialog({
 }
 
 export function Stars({ value, count }: { value: number; count?: number }) {
-  const rounded = Math.round(value * 2) / 2;
+  const safe = Number.isFinite(value) ? value : 0;
+  const rounded = Math.round(safe * 2) / 2;
   return (
-    <span className="stars" aria-label={`${value.toFixed(1)} out of 5${count ? ` from ${count} reviews` : ""}`}>
+    <span
+      className="stars"
+      aria-label={`${safe.toFixed(1)} out of 5${count ? ` from ${count} reviews` : ""}`}
+    >
       {[1, 2, 3, 4, 5].map((star) => (
-        <span key={star} className={rounded >= star ? "star star-on" : rounded >= star - 0.5 ? "star star-half" : "star"}>
+        <span
+          key={star}
+          aria-hidden="true"
+          className={rounded >= star ? "star star-on" : rounded >= star - 0.5 ? "star star-half" : "star"}
+        >
           ★
         </span>
       ))}
       <span className="small muted">
-        {value.toFixed(1)}{count ? ` (${count})` : ""}
+        {safe.toFixed(1)}
+        {count ? ` (${count})` : ""}
       </span>
     </span>
   );

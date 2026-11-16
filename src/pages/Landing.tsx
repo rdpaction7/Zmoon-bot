@@ -90,6 +90,18 @@ export default function Landing() {
           <p className="muted small">
             Free to join · no email verification hoops · swaps and messages never cost coins
           </p>
+          <div className="pill-row hero-chips">
+            <span className="muted small">Popular:</span>
+            {["Figma", "Spanish", "Guitar", "Watercolour"].map((topic) => (
+              <Link
+                key={topic}
+                className="badge badge-accent"
+                to={`/skills?q=${encodeURIComponent(topic)}`}
+              >
+                {topic}
+              </Link>
+            ))}
+          </div>
         </div>
 
         <div className="hero-art reveal reveal-2" aria-hidden="true">
@@ -164,7 +176,7 @@ export default function Landing() {
               <Link key={course.id} to={`/courses/${course.id}`} className="course-card card">
                 <div className="thumb">
                   {course.thumbnailUrl ? (
-                    <img src={course.thumbnailUrl} alt="" loading="lazy" />
+                    <img src={course.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                   ) : (
                     <span className="thumb-fallback">
                       {titleOf(course.title).slice(0, 2).toUpperCase()}

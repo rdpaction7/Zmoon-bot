@@ -4,6 +4,7 @@ import { useAuth } from "../state/AuthContext";
 import { listNotifications, markAllNotificationsRead, markNotificationRead } from "../lib/api";
 import type { AppNotification } from "../lib/types";
 import { Badge, Button, Card, EmptyState, Skeleton, useToast } from "../components/ui";
+import { NOTIFICATIONS_CHANGED } from "../components/Layout";
 
 export default function Notifications() {
   const { user } = useAuth();
@@ -33,6 +34,7 @@ export default function Notifications() {
     try {
       await markAllNotificationsRead(items);
       push("All notifications marked as read.", "success");
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
       await load();
     } catch (caught: any) {
       push(caught?.message || "Could not update notifications.", "error");
@@ -61,7 +63,11 @@ export default function Notifications() {
       {loading ? (
         <Skeleton lines={4} />
       ) : items.length === 0 ? (
-        <EmptyState title="Nothing here yet" body="Swap requests, messages and rewards will appear here." />
+        <EmptyState
+          icon="bell"
+          title="Nothing here yet"
+          body="Swap requests, messages and rewards will appear here."
+        />
       ) : (
         <div className="stack">
           {items.map((item) => (
@@ -78,7 +84,17 @@ export default function Notifications() {
                 </div>
                 <div className="stack-actions">
                   {item.link && (
-                    <Link className="btn btn-ghost btn-sm" to={item.link}>
+                    <Link
+                      className="btn btn-ghost btn-sm"
+                      to={item.link}
+                      onClick={() => {
+                        if (!item.read) {
+                          markNotificationRead(item.id)
+                            .then(() => window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED)))
+                            .catch(() => {});
+                        }
+                      }}
+                    >
                       Open
                     </Link>
                   )}
@@ -88,6 +104,7 @@ export default function Notifications() {
                       variant="ghost"
                       onClick={async () => {
                         await markNotificationRead(item.id);
+                        window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
                         await load();
                       }}
                     >

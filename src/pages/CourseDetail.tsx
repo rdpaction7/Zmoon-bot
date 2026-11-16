@@ -23,6 +23,7 @@ import {
   Textarea,
   useToast,
 } from "../components/ui";
+import { Icon } from "../components/icons";
 
 export default function CourseDetail() {
   const { courseId = "" } = useParams();
@@ -83,6 +84,11 @@ export default function CourseDetail() {
     try {
       const result = await purchaseCourse(user.id, course.id);
       setEnrolled(true);
+      if (!result.alreadyEnrolled) {
+        setCourse((current) =>
+          current ? { ...current, enrollmentCount: Number(current.enrollmentCount || 0) + 1 } : current,
+        );
+      }
       setConfirmOpen(false);
       await refreshProfile().catch(() => {});
       push(
@@ -178,7 +184,7 @@ export default function CourseDetail() {
           <div className="pill-row">
             <Badge>{course.category}</Badge>
             <Badge tone="neutral">{course.level}</Badge>
-            <Badge tone={isPublic ? "positive" : "warning"}>{course.status}</Badge>
+            {!isPublic && <Badge tone="warning">{course.status}</Badge>}
             <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} Skill Coins`}</Badge>
           </div>
           <h1>{titleOf(course.title)}</h1>
@@ -207,7 +213,7 @@ export default function CourseDetail() {
               <Badge tone="positive">Enrolled — you have access</Badge>
             ) : isOwner ? (
               <Link className="btn btn-secondary" to="/studio">
-                Manage this course
+                <Icon name="settings" /> Manage this course
               </Link>
             ) : !user ? (
               <Link className="btn btn-primary" to={`/login?next=/courses/${course.id}`}>
@@ -217,6 +223,7 @@ export default function CourseDetail() {
               <Button disabled>Demo accounts cannot enrol</Button>
             ) : isPublic ? (
               <Button onClick={() => setConfirmOpen(true)}>
+                <Icon name={course.price === 0 ? "book" : "coins"} />
                 {course.price === 0 ? "Enrol for free" : `Enrol for ${course.price} coins`}
               </Button>
             ) : (
@@ -285,9 +292,9 @@ export default function CourseDetail() {
           </form>
         )}
 
-        {reviews.length === 0 ? (
-          <p className="muted small">No reviews yet. Learners who enrol can leave one.</p>
-        ) : (
+          {reviews.length === 0 ? (
+            <p className="muted small">No reviews yet. Learners who enrol can leave one.</p>
+          ) : (
           <div className="review-list">
             {reviews.map((review) => (
               <article className="review" key={review.id}>

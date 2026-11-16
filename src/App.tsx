@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy } from "react";
 import { Route, Routes } from "react-router-dom";
 import { AppShell, ProtectedRoute } from "./components/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -50,24 +50,11 @@ const Settings = lazy(() => import("./pages/Settings"));
 const Admin = lazy(() => import("./pages/Admin"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-function RouteFallback() {
-  return (
-    <div className="page" aria-busy="true" aria-label="Loading page">
-      <div className="skeleton-stack">
-        <div className="skeleton" style={{ height: 26, width: "38%" }} />
-        <div className="skeleton" style={{ width: "72%" }} />
-        <div className="skeleton" style={{ width: "64%" }} />
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <ErrorBoundary>
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route element={<AppShell />}>
+      <Routes>
+        <Route element={<AppShell />}>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Auth mode="login" />} />
             <Route path="/signup" element={<Auth mode="signup" />} />
@@ -152,7 +139,6 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
-      </Suspense>
     </ErrorBoundary>
   );
 }

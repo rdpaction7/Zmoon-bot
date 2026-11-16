@@ -46,6 +46,7 @@ export default function Library() {
         <Skeleton lines={5} />
       ) : items.length === 0 ? (
         <EmptyState
+          icon="book"
           title="Your library is empty"
           body="Enrol in a free course, or spend a few Skill Coins on a paid one."
           action={
@@ -58,6 +59,11 @@ export default function Library() {
         <div className="grid grid-2">
           {items.map(({ enrollment, course }) => (
             <Card className="card-pad" key={enrollment.id}>
+              {course?.thumbnailUrl && (
+                <div className="studio-thumb">
+                  <img src={course.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                </div>
+              )}
               <div className="pill-row">
                 <Badge tone="positive">Enrolled</Badge>
                 <Badge tone="accent">{enrollment.pricePaid === 0 ? "Free" : `${enrollment.pricePaid} coins`}</Badge>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   createReport,
   createSkill,
@@ -22,6 +22,7 @@ import {
   Field,
   Input,
   Modal,
+  SearchInput,
   Select,
   Skeleton,
   Textarea,
@@ -31,14 +32,15 @@ import {
 export default function Explore() {
   const { user, isDemo } = useAuth();
   const { push } = useToast();
+  const [params] = useSearchParams();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [categories, setCategories] = useState<SkillCategory[]>([]);
   const [members, setMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  const [term, setTerm] = useState("");
-  const [category, setCategory] = useState("all");
+  const [term, setTerm] = useState(params.get("q") || "");
+  const [category, setCategory] = useState(params.get("category") || "all");
   const [level, setLevel] = useState("all");
   const [sort, setSort] = useState("newest");
 
@@ -177,6 +179,26 @@ export default function Explore() {
     }
   }
 
+  function openAdd() {
+    setFormError("");
+    setAddOpen(true);
+  }
+
+  function openSkill(skill: Skill) {
+    setFormError("");
+    setSwapForm({ offeredSkill: "", wantedSkill: "", message: "" });
+    setActive(skill);
+  }
+
+  function clearFilters() {
+    setTerm("");
+    setCategory("all");
+    setLevel("all");
+    setSort("newest");
+  }
+
+  const filtersActive = Boolean(term.trim()) || category !== "all" || level !== "all" || sort !== "newest";
+
   return (
     <div className="page">
       <header className="section-head between">
@@ -188,16 +210,16 @@ export default function Explore() {
           </p>
         </div>
         {user && !isDemo && (
-          <Button onClick={() => setAddOpen(true)}>Offer a skill</Button>
+          <Button onClick={openAdd}>Offer a skill</Button>
         )}
       </header>
 
       <div className="filter-bar">
-        <Input
-          placeholder="Search skills, categories or members"
+        <SearchInput
           value={term}
-          onChange={(event) => setTerm(event.target.value)}
-          aria-label="Search skills"
+          onChange={setTerm}
+          placeholder="Search skills, categories or members"
+          label="Search skills"
         />
         <Select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Category">
           <option value="all">All categories</option>
@@ -219,12 +241,27 @@ export default function Explore() {
         </Select>
       </div>
 
+      {!loading && (
+        <div className="filter-meta">
+          <span>
+            {visible.length} skill{visible.length === 1 ? "" : "s"}
+            {filtersActive ? " match your filters" : " offered by the community"}
+          </span>
+          {filtersActive && (
+            <button type="button" className="filter-clear" onClick={clearFilters}>
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
       <ErrorText>{loadError}</ErrorText>
 
       {loading ? (
         <Skeleton lines={6} />
       ) : visible.length === 0 ? (
         <EmptyState
+          icon="compass"
           title="No skills match yet"
           body={
             skills.length === 0
@@ -233,7 +270,7 @@ export default function Explore() {
           }
           action={
             user && !isDemo ? (
-              <Button variant="secondary" onClick={() => setAddOpen(true)}>
+              <Button variant="secondary" onClick={openAdd}>
                 Offer a skill
               </Button>
             ) : (
@@ -259,7 +296,7 @@ export default function Explore() {
                   <Avatar name={str(skill.ownerName, "Member")} size={26} />
                   {str(skill.ownerName, "Member")}
                 </span>
-                <Button size="sm" variant="secondary" onClick={() => setActive(skill)}>
+                <Button size="sm" variant="secondary" onClick={() => openSkill(skill)}>
                   View
                 </Button>
               </div>
@@ -282,13 +319,13 @@ export default function Explore() {
             <Button variant="ghost" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={addSkill} loading={busy}>
+            <Button type="submit" form="add-skill-form" loading={busy}>
               Submit for review
             </Button>
           </>
         }
       >
-        <form className="form-grid" onSubmit={addSkill}>
+        <form id="add-skill-form" className="form-grid" onSubmit={addSkill}>
           <Field label="Skill title">
             <Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
           </Field>
@@ -329,17 +366,17 @@ export default function Explore() {
         onClose={() => setActive(null)}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setReportOpen(true)}>
+            <Button type="button" variant="ghost" onClick={() => setReportOpen(true)}>
               Report
             </Button>
-            <Button onClick={requestSwap} loading={busy} disabled={isDemo}>
+            <Button type="submit" form="swap-request-form" loading={busy} disabled={isDemo}>
               Send swap request
             </Button>
           </>
         }
       >
         {active && (
-          <div className="form-grid">
+          <form id="swap-request-form" className="form-grid" onSubmit={requestSwap}>
             <div className="pill-row">
               <Badge>{active.category}</Badge>
               <Badge tone="neutral">{active.level}</Badge>
@@ -377,7 +414,7 @@ export default function Explore() {
                 <ErrorText>{formError}</ErrorText>
               </>
             )}
-          </div>
+          </form>
         )}
       </Modal>
 
@@ -390,20 +427,22 @@ export default function Explore() {
             <Button variant="ghost" onClick={() => setReportOpen(false)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={submitReport}>
+            <Button type="submit" form="report-skill-form" variant="danger">
               Send report
             </Button>
           </>
         }
       >
-        <Field label="What is wrong?">
-          <Textarea
-            rows={4}
-            value={reportReason}
-            onChange={(event) => setReportReason(event.target.value)}
-            placeholder="Spam, misleading, copied content…"
-          />
-        </Field>
+        <form id="report-skill-form" onSubmit={(event) => { event.preventDefault(); submitReport(); }}>
+          <Field label="What is wrong?">
+            <Textarea
+              rows={4}
+              value={reportReason}
+              onChange={(event) => setReportReason(event.target.value)}
+              placeholder="Spam, misleading, copied content…"
+            />
+          </Field>
+        </form>
       </Modal>
 
       <ConfirmDialog

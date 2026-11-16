@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { listCategories, listCourses } from "../lib/api";
 import type { Course, SkillCategory } from "../lib/types";
 import { str, titleOf } from "../lib/text";
-import { Badge, Button, EmptyState, Input, Select, Skeleton } from "../components/ui";
+import { Badge, LinkButton, EmptyState, SearchInput, Select, Skeleton } from "../components/ui";
 
 export default function Courses() {
+  const [params] = useSearchParams();
   const [courses, setCourses] = useState<Course[]>([]);
   const [categories, setCategories] = useState<SkillCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [term, setTerm] = useState("");
-  const [category, setCategory] = useState("all");
+  const [term, setTerm] = useState(params.get("q") || "");
+  const [category, setCategory] = useState(params.get("category") || "all");
   const [level, setLevel] = useState("all");
   const [price, setPrice] = useState("all");
   const [sort, setSort] = useState("newest");
@@ -46,6 +47,16 @@ export default function Courses() {
     return list;
   }, [courses, term, category, level, price, sort]);
 
+  const filtersActive = Boolean(term.trim()) || category !== "all" || level !== "all" || price !== "all" || sort !== "newest";
+
+  function clearFilters() {
+    setTerm("");
+    setCategory("all");
+    setLevel("all");
+    setPrice("all");
+    setSort("newest");
+  }
+
   return (
     <div className="page">
       <header className="section-head between">
@@ -60,11 +71,11 @@ export default function Courses() {
       </header>
 
       <div className="filter-bar">
-        <Input
-          placeholder="Search courses or creators"
+        <SearchInput
           value={term}
-          onChange={(event) => setTerm(event.target.value)}
-          aria-label="Search courses"
+          onChange={setTerm}
+          placeholder="Search courses or creators"
+          label="Search courses"
         />
         <Select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Category">
           <option value="all">All categories</option>
@@ -93,18 +104,33 @@ export default function Courses() {
         </Select>
       </div>
 
+      {!loading && (
+        <div className="filter-meta">
+          <span>
+            {visible.length} course{visible.length === 1 ? "" : "s"}
+            {filtersActive ? " match your filters" : " published by the community"}
+          </span>
+          {filtersActive && (
+            <button type="button" className="filter-clear" onClick={clearFilters}>
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
       {error && <p className="error-text">{error}</p>}
 
       {loading ? (
         <Skeleton lines={6} />
       ) : visible.length === 0 ? (
         <EmptyState
+          icon="book"
           title="No courses match yet"
           body="Nothing published under these filters. Try clearing them, or publish the first course yourself."
           action={
-            <Button variant="secondary" onClick={() => window.location.assign("/studio")}>
+            <LinkButton to="/studio" variant="secondary">
               Open creator studio
-            </Button>
+            </LinkButton>
           }
         />
       ) : (
@@ -113,7 +139,7 @@ export default function Courses() {
             <Link key={course.id} to={`/courses/${course.id}`} className="course-card card">
               <div className="thumb">
                 {course.thumbnailUrl ? (
-                  <img src={course.thumbnailUrl} alt="" />
+                  <img src={course.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                 ) : (
                   <span className="thumb-fallback">{titleOf(course.title).slice(0, 2).toUpperCase()}</span>
                 )}

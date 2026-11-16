@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import { Avatar, Button, Skeleton } from "./ui";
+import { Icon, type IconName } from "./icons";
 import { listNotifications } from "../lib/api";
 import { slug, str } from "../lib/text";
 
@@ -12,6 +13,14 @@ const NAV = [
   { to: "/swaps", label: "Swaps" },
   { to: "/messages", label: "Messages" },
   { to: "/wallet", label: "Wallet" },
+];
+
+const MOBILE_TABS: { to: string; label: string; icon: IconName }[] = [
+  { to: "/dashboard", label: "Home", icon: "home" },
+  { to: "/skills", label: "Discover", icon: "compass" },
+  { to: "/courses", label: "Courses", icon: "book" },
+  { to: "/messages", label: "Messages", icon: "chat" },
+  { to: "/wallet", label: "Wallet", icon: "wallet" },
 ];
 
 const TITLES: [RegExp, string][] = [
@@ -34,11 +43,22 @@ const TITLES: [RegExp, string][] = [
   [/^\/u\//, "Profile"],
 ];
 
+/** Broadcast after notifications are marked read so the nav badge updates live. */
+export const NOTIFICATIONS_CHANGED = "skillswap:notifications-changed";
+
 function DocumentTitle() {
   const { pathname } = useLocation();
   useEffect(() => {
     const match = TITLES.find(([pattern]) => pattern.test(pathname));
     document.title = match ? `${match[1]} · SkillSwap` : "SkillSwap — Teach. Learn. Swap.";
+  }, [pathname]);
+  return null;
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
   }, [pathname]);
   return null;
 }
@@ -59,6 +79,7 @@ export function TopNav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -71,20 +92,49 @@ export function TopNav() {
       setUnread(0);
       return;
     }
-    listNotifications(user.id)
-      .then((items) => setUnread(items.filter((item) => !item.read).length))
-      .catch(() => setUnread(0));
+    let cancelled = false;
+    const refresh = () => {
+      listNotifications(user.id)
+        .then((items) => {
+          if (!cancelled) setUnread(items.filter((item) => !item.read).length);
+        })
+        .catch(() => {
+          if (!cancelled) setUnread(0);
+        });
+    };
+    refresh();
+    window.addEventListener(NOTIFICATIONS_CHANGED, refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(NOTIFICATIONS_CHANGED, refresh);
+    };
   }, [user, location.pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;
     const close = () => setMenuOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
     document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [menuOpen]);
 
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const primaryMobile = NAV;
+
   return (
-    <header className="nav">
+    <header className={`nav ${scrolled ? "nav-scrolled" : ""}`}>
       <div className="nav-inner">
         <Brand />
         <nav className="nav-links" aria-label="Main">
@@ -106,7 +156,7 @@ export function TopNav() {
                 className="icon-btn"
                 aria-label={`Notifications${unread > 0 ? `, ${unread} unread` : ""}`}
               >
-                <span aria-hidden="true">✉</span>
+                <Icon name="bell" />
                 {unread > 0 && <span className="unread-dot">{unread > 9 ? "9+" : unread}</span>}
               </Link>
               <div className="menu-wrap" onClick={(event) => event.stopPropagation()}>
@@ -117,40 +167,37 @@ export function TopNav() {
                   aria-haspopup="menu"
                   aria-label="Account menu"
                 >
-                  <Avatar name={str(user.displayName, "Member")} src={user.photoURL} size={34} />
+                  <Avatar name={str(user.displayName, "Member")} src={user.photoURL} size={36} />
                 </button>
                 {menuOpen && (
                   <div className="menu" role="menu">
                     <div className="menu-head">
                       <strong>{str(user.displayName, "Member")}</strong>
                       <span className="muted small">@{str(user.username, "member")}</span>
-                      <span className="badge badge-accent" style={{ marginTop: 6 }}>
-                        {user.balance} Skill Coins
+                      <span className="badge badge-accent" style={{ marginTop: 6, alignSelf: "flex-start" }}>
+                        <Icon name="coins" size={12} /> {user.balance} Skill Coins
                       </span>
                     </div>
                     <Link className="menu-item" to={`/u/${slug(user.username)}`} role="menuitem">
-                      My profile
+                      <Icon name="user" /> My profile
                     </Link>
                     <Link className="menu-item" to="/studio" role="menuitem">
-                      Creator studio
+                      <Icon name="play" /> Creator studio
                     </Link>
                     <Link className="menu-item" to="/library" role="menuitem">
-                      My library
+                      <Icon name="bookmark" /> My library
                     </Link>
                     <Link className="menu-item" to="/settings" role="menuitem">
-                      Settings
+                      <Icon name="settings" /> Settings
                     </Link>
                     {isAdmin && (
                       <Link className="menu-item" to="/admin" role="menuitem">
-                        Admin console
+                        <Icon name="shield" /> Admin console
                       </Link>
                     )}
-                    <button
-                      className="menu-item menu-item-danger"
-                      onClick={() => signOutNow()}
-                      role="menuitem"
-                    >
-                      Sign out
+                    <div className="menu-sep" />
+                    <button className="menu-item menu-item-danger" onClick={() => signOutNow()} role="menuitem">
+                      <Icon name="logout" /> Sign out
                     </button>
                   </div>
                 )}
@@ -168,35 +215,72 @@ export function TopNav() {
           )}
           <button
             className="mobile-toggle"
-            aria-label="Toggle navigation"
+            aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={mobileOpen}
+            aria-controls="mobile-nav"
             onClick={() => setMobileOpen((open) => !open)}
           >
-            {mobileOpen ? "✕" : "☰"}
+            <Icon name={mobileOpen ? "close" : "menu"} />
           </button>
         </div>
       </div>
       {mobileOpen && (
-        <nav className="mobile-nav" aria-label="Mobile">
-          {NAV.map((item) => (
-            <NavLink key={item.to} to={item.to} className="nav-link">
+        <nav className="mobile-nav" id="mobile-nav" aria-label="Mobile">
+          {user && (
+            <div className="mobile-user">
+              <Avatar name={str(user.displayName, "Member")} src={user.photoURL} size={30} />
+              <span>
+                <strong>{str(user.displayName, "Member")}</strong>
+                <span className="muted">
+                  @{str(user.username, "member")} · {user.balance} coins
+                </span>
+              </span>
+            </div>
+          )}
+          {primaryMobile.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}
+            >
               {item.label}
             </NavLink>
           ))}
-          {user && (
+          {user ? (
             <>
-              <NavLink to="/studio" className="nav-link">
+              <span className="mobile-nav-section">Your space</span>
+              <NavLink to="/studio" className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}>
                 Creator studio
               </NavLink>
-              <NavLink to="/settings" className="nav-link">
+              <NavLink to="/library" className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}>
+                My library
+              </NavLink>
+              <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}>
                 Settings
               </NavLink>
               {isAdmin && (
-                <NavLink to="/admin" className="nav-link">
+                <NavLink to="/admin" className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}>
                   Admin console
                 </NavLink>
               )}
+              <div className="mobile-nav-foot">
+                <span className="muted small">
+                  {isDemo ? "Demo mode: read-only browsing." : "Swaps and messages are always free."}
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => signOutNow()}>
+                  Sign out
+                </Button>
+              </div>
             </>
+          ) : (
+            <div className="mobile-nav-foot">
+              <Link className="btn btn-secondary btn-sm" to="/login">
+                Sign in
+              </Link>
+              <Link className="btn btn-primary btn-sm" to="/signup">
+                Join SkillSwap
+              </Link>
+            </div>
           )}
         </nav>
       )}
@@ -209,14 +293,33 @@ export function TopNav() {
   );
 }
 
+function MobileTabBar() {
+  return (
+    <nav className="mobile-tabbar" aria-label="Primary">
+      <div className="mobile-tabbar-inner">
+        {MOBILE_TABS.map((tab) => (
+          <NavLink
+            key={tab.to}
+            to={tab.to}
+            className={({ isActive }) => `mobile-tab ${isActive ? "mobile-tab-active" : ""}`}
+          >
+            <Icon name={tab.icon} />
+            <span>{tab.label}</span>
+          </NavLink>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 export function Footer() {
   return (
     <footer className="footer">
       <div className="footer-inner">
         <div>
           <Brand />
-          <p className="muted small">
-            Teach what you know. Learn what you don't. Swaps and messages stay free.
+          <p className="muted small footer-brand-copy">
+            Teach what you know. Learn what you don't. Swaps and messages stay free — always.
           </p>
         </div>
         <div className="footer-links">
@@ -224,6 +327,10 @@ export function Footer() {
           <Link to="/courses">Courses</Link>
           <Link to="/wallet">Skill Coins</Link>
           <Link to="/signup">Join</Link>
+        </div>
+        <div className="footer-meta">
+          <span>© {new Date().getFullYear()} SkillSwap. A learning community, not a marketplace.</span>
+          <span>Built with care · no fees on swaps</span>
         </div>
       </div>
     </footer>
@@ -241,19 +348,38 @@ function DataErrorBanner() {
   );
 }
 
+function PageFallback() {
+  return (
+    <div className="page" aria-busy="true" aria-label="Loading page">
+      <div className="skeleton-stack">
+        <div className="skeleton" style={{ height: 26, width: "38%" }} />
+        <div className="skeleton" style={{ width: "72%" }} />
+        <div className="skeleton" style={{ width: "64%" }} />
+      </div>
+    </div>
+  );
+}
+
 export function AppShell() {
+  const { user, loading } = useAuth();
+
   return (
     <>
       <DocumentTitle />
+      <ScrollToTop />
       <a className="skip-link" href="#main">
         Skip to content
       </a>
       <TopNav />
       <DataErrorBanner />
       <main className="shell" id="main">
-        <Outlet />
+        <Suspense fallback={<PageFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
       <Footer />
+      {user && !loading && <MobileTabBar />}
+      {user && !loading && <div className="tabbar-spacer" aria-hidden="true" />}
     </>
   );
 }

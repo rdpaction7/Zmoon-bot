@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import { clampPrice, listCategories, listCourses, saveCourse, submitCourse } from "../lib/api";
@@ -54,6 +54,16 @@ export default function Studio() {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const editorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    const timer = window.setTimeout(
+      () => editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      40,
+    );
+    return () => window.clearTimeout(timer);
+  }, [editing]);
 
   async function load() {
     if (!user) return;
@@ -160,6 +170,7 @@ export default function Studio() {
       </header>
 
       {editing && (
+        <div ref={editorRef}>
         <Card className="card-pad">
           <div className="between">
             <h2>{draft.id ? "Edit course" : "New course"}</h2>
@@ -167,6 +178,12 @@ export default function Studio() {
               Close
             </Button>
           </div>
+          {draft.status === "approved" && (
+            <p className="muted small">
+              This course is live. Saving changes keeps it published — use “Resubmit for review” if
+              you would like a moderator to look at the new version.
+            </p>
+          )}
           <div className="form-grid">
             <Field label="Title">
               <Input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
@@ -243,22 +260,24 @@ export default function Studio() {
             />
 
             <ErrorText>{error}</ErrorText>
-            <div className="row">
+            <div className="row wrap">
               <Button variant="secondary" onClick={() => save(false)} loading={busy}>
-                Save draft
+                {draft.id ? "Save changes" : "Save as draft"}
               </Button>
               <Button onClick={() => save(true)} loading={busy}>
-                Save and submit for review
+                {draft.status === "approved" ? "Resubmit for review" : "Save and submit for review"}
               </Button>
             </div>
           </div>
         </Card>
+        </div>
       )}
 
       {loading ? (
         <Skeleton lines={4} />
       ) : courses.length === 0 ? (
         <EmptyState
+          icon="play"
           title="No courses yet"
           body="Publish your first course and share what you know."
           action={<Button onClick={startNew}>New course</Button>}
@@ -267,6 +286,11 @@ export default function Studio() {
         <div className="grid grid-2">
           {courses.map((course) => (
             <Card className="card-pad" key={course.id}>
+              {course.thumbnailUrl && (
+                <div className="studio-thumb">
+                  <img src={course.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                </div>
+              )}
               <div className="pill-row">
                 <Badge tone={course.status === "approved" ? "positive" : "warning"}>{course.status}</Badge>
                 <Badge tone="accent">{course.price === 0 ? "Free" : `${course.price} coins`}</Badge>

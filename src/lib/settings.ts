@@ -27,20 +27,33 @@ export function writeGithubSettings(settings: GithubSettings) {
 }
 
 /**
- * App-level values (the placeholders in App.tsx) win when they are filled in;
- * otherwise anything saved from the Settings screen is used.
+ * Stored settings (from the Settings screen) take precedence once the user saves
+ * them, so a pasted token actually replaces the app-level placeholder. Before
+ * that, the values from App.tsx are used.
  */
 export function mergeSettings(seed?: Partial<GithubSettings>): GithubSettings {
-  const stored = readGithubSettings();
-  const pick = <K extends keyof GithubSettings>(key: K): GithubSettings[K] =>
-    (seed && (seed as GithubSettings)[key]) || stored[key];
+  const raw = (() => {
+    try {
+      return localStorage.getItem(KEY);
+    } catch {
+      return null;
+    }
+  })();
+
+  if (raw) {
+    try {
+      const stored = JSON.parse(raw) as Partial<GithubSettings>;
+      return { ...DEFAULT_GITHUB, ...seed, ...stored, maxAssets: stored.maxAssets || 1000 };
+    } catch {
+      /* fall through to defaults */
+    }
+  }
+
   return {
-    token: pick("token"),
-    owner: pick("owner"),
-    repo: pick("repo"),
-    prefix: pick("prefix"),
-    maxAssets: pick("maxAssets") || 1000,
-    uploadUrl: pick("uploadUrl"),
+    ...DEFAULT_GITHUB,
+    ...seed,
+    token: seed?.token || DEFAULT_GITHUB.token,
+    maxAssets: seed?.maxAssets || 1000,
   };
 }
 

@@ -12,6 +12,7 @@ import {
 import type { AppNotification, Course, Enrollment, Skill, Streak, SwapRequest } from "../lib/types";
 import { firstName, slug, titleOf } from "../lib/text";
 import { Badge, Button, Card, Skeleton, Stat } from "../components/ui";
+import { Icon } from "../components/icons";
 
 export default function Dashboard() {
   const { user, isAdmin } = useAuth();
@@ -62,26 +63,30 @@ export default function Dashboard() {
   const recommended = courses
     .filter((course) => course.status === "approved" && !enrolledIds.has(course.id))
     .slice(0, 3);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <div className="page">
       <header className="section-head between">
         <div>
           <span className="eyebrow">Dashboard</span>
-          <h1>Hello, {firstName(user.displayName)}</h1>
+          <h1>
+            {greeting}, {firstName(user.displayName)}
+          </h1>
           <p className="muted">
             {user.demo
               ? "You are browsing as a demo visitor."
               : "Here is where your teaching and learning stand today."}
           </p>
         </div>
-        <div className="row">
+        <div className="row wrap">
           <Link className="btn btn-secondary btn-sm" to="/wallet">
-            {user.balance} Skill Coins
+            <Icon name="coins" /> {user.balance} Skill Coins
           </Link>
           {isAdmin && (
             <Link className="btn btn-primary btn-sm" to="/admin">
-              Admin console
+              <Icon name="shield" /> Admin console
             </Link>
           )}
         </div>
@@ -94,21 +99,28 @@ export default function Dashboard() {
       ) : (
         <>
           <div className="grid grid-4">
-            <Card className="card-pad">
-              <Stat label="Skill Coins" value={user.balance} hint="Used only for paid courses" />
+            <Card className="card-pad stat-card">
+              <Stat
+                label="Skill Coins"
+                value={user.balance}
+                hint="Used only for paid courses"
+                icon="coins"
+              />
             </Card>
-            <Card className="card-pad">
+            <Card className="card-pad stat-card">
               <Stat
                 label="Daily streak"
                 value={streak ? `${streak.current} day${streak.current === 1 ? "" : "s"}` : "—"}
                 hint={streak?.lastClaimDay === new Date().toISOString().slice(0, 10) ? "Claimed today" : "Not claimed today"}
+                icon="flame"
+                tone="positive"
               />
             </Card>
-            <Card className="card-pad">
-              <Stat label="Courses enrolled" value={enrollments.length} hint="In your library" />
+            <Card className="card-pad stat-card">
+              <Stat label="Courses enrolled" value={enrollments.length} hint="In your library" icon="book" />
             </Card>
-            <Card className="card-pad">
-              <Stat label="Pending swaps" value={pendingSwaps} hint="Waiting on a reply" />
+            <Card className="card-pad stat-card">
+              <Stat label="Pending swaps" value={pendingSwaps} hint="Waiting on a reply" icon="swap" tone="espresso" />
             </Card>
           </div>
 
@@ -182,7 +194,7 @@ export default function Dashboard() {
                   <Link key={course.id} className="course-card card" to={`/courses/${course.id}`}>
                     <div className="thumb">
                       {course.thumbnailUrl ? (
-                        <img src={course.thumbnailUrl} alt="" />
+                        <img src={course.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                       ) : (
                         <span className="thumb-fallback">{slug(course.title).slice(0, 2).toUpperCase()}</span>
                       )}

@@ -11,6 +11,7 @@ import {
 } from "../lib/api";
 import type { CoinTransaction, Course, Streak } from "../lib/types";
 import { Badge, Button, Card, EmptyState, Skeleton, Stat, useToast } from "../components/ui";
+import { Icon } from "../components/icons";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const daysFromToday = (back: number) =>
@@ -23,7 +24,7 @@ export default function Wallet() {
   const [streak, setStreak] = useState<Streak | null>(null);
   const [rewards, setRewards] = useState<{ course: Course; rewardable: number; earned: number }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
   async function load() {
@@ -52,7 +53,7 @@ export default function Wallet() {
 
   async function claim() {
     if (!user) return;
-    setBusy(true);
+    setBusy("streak");
     try {
       const result = await claimDailyStreak(user.id);
       if (result.alreadyClaimed) {
@@ -65,13 +66,13 @@ export default function Wallet() {
     } catch (caught: any) {
       push(caught?.message || "Could not claim your streak.", "error");
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
 
   async function claimCreator(entry: { course: Course; rewardable: number }) {
     if (!user) return;
-    setBusy(true);
+    setBusy(`creator-${entry.course.id}`);
     try {
       const paid = await claimCreatorReward(user.id, entry.course, entry.rewardable);
       push(`Claimed ${paid} Skill Coin${paid === 1 ? "" : "s"} for "${entry.course.title}".`, "success");
@@ -80,13 +81,13 @@ export default function Wallet() {
     } catch (caught: any) {
       push(caught?.message || "Could not claim creator rewards.", "error");
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
 
   async function ad() {
     if (!user) return;
-    setBusy(true);
+    setBusy("ad");
     try {
       const result = await claimAdPlaceholder(user.id);
       if (result.alreadyClaimed) {
@@ -99,7 +100,7 @@ export default function Wallet() {
     } catch (caught: any) {
       push(caught?.message || "Could not add the reward.", "error");
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
 
@@ -125,25 +126,49 @@ export default function Wallet() {
         <>
           <div className="grid grid-3">
             <Card className="card-pad balance-card">
-              <Stat label="Balance" value={`${user.balance} coins`} hint="Available to spend" />
+              <Stat
+                label="Balance"
+                value={`${user.balance} coins`}
+                hint="Available to spend"
+                icon="coins"
+              />
               <Link className="btn btn-secondary btn-sm" to="/courses">
                 Browse paid courses
               </Link>
             </Card>
-            <Card className="card-pad">
+            <Card className="card-pad stat-card">
               <Stat
                 label="Daily streak"
                 value={`${streak?.current || 0} day${streak?.current === 1 ? "" : "s"}`}
                 hint={`Longest: ${streak?.longest || 0} days`}
+                icon="flame"
+                tone="positive"
               />
-              <Button size="sm" onClick={claim} loading={busy} disabled={claimedToday || isDemo}>
+              <Button
+                size="sm"
+                onClick={claim}
+                loading={busy === "streak"}
+                disabled={claimedToday || isDemo || (Boolean(busy) && busy !== "streak")}
+              >
                 {claimedToday ? "Claimed today" : "Claim today's coin"}
               </Button>
               <p className="muted small">+1 coin daily, +2 extra every seventh day.</p>
             </Card>
-            <Card className="card-pad">
-              <Stat label="Rewarded ad" value="Placeholder" hint="No ad provider configured" />
-              <Button size="sm" variant="secondary" onClick={ad} loading={busy} disabled={isDemo}>
+            <Card className="card-pad stat-card">
+              <Stat
+                label="Rewarded ad"
+                value="Placeholder"
+                hint="No ad provider configured"
+                icon="play"
+                tone="espresso"
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={ad}
+                loading={busy === "ad"}
+                disabled={isDemo || (Boolean(busy) && busy !== "ad")}
+              >
                 Add placeholder reward
               </Button>
               <p className="muted small">
@@ -160,7 +185,11 @@ export default function Wallet() {
                 const day = daysFromToday(13 - index);
                 const done = history.includes(day);
                 return (
-                  <span key={day} className={`day ${done ? "day-done" : ""}`} title={day}>
+                  <span
+                    key={day}
+                    className={`day ${done ? "day-done" : ""} ${day === today() ? "day-today" : ""}`}
+                    title={day}
+                  >
                     {Number(day.slice(-2))}
                   </span>
                 );
@@ -191,7 +220,12 @@ export default function Wallet() {
                       </p>
                     </div>
                     {entry.rewardable > 0 ? (
-                      <Button size="sm" onClick={() => claimCreator(entry)} loading={busy} disabled={isDemo}>
+                      <Button
+                        size="sm"
+                        onClick={() => claimCreator(entry)}
+                        loading={busy === `creator-${entry.course.id}`}
+                        disabled={isDemo || (Boolean(busy) && busy !== `creator-${entry.course.id}`)}
+                      >
                         Claim {entry.rewardable}
                       </Button>
                     ) : (
@@ -206,7 +240,11 @@ export default function Wallet() {
           <Card className="card-pad">
             <h2>Transaction history</h2>
             {transactions.length === 0 ? (
-              <EmptyState title="No transactions yet" body="Claim your streak or buy a course to see entries here." />
+              <EmptyState
+                icon="coins"
+                title="No transactions yet"
+                body="Claim your streak or buy a course to see entries here."
+              />
             ) : (
               <div className="ledger">
                 {transactions.map((entry) => (

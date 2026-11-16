@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
-import { listSwaps, updateSwapStatus } from "../lib/api";
+import { ensureConversation, listSwaps, updateSwapStatus } from "../lib/api";
 import type { SwapRequest } from "../lib/types";
 import { Badge, Button, Card, EmptyState, Skeleton, Tabs, useToast } from "../components/ui";
 
@@ -16,6 +16,7 @@ const TONE: Record<SwapRequest["status"], "neutral" | "positive" | "warning" | "
 export default function Swaps() {
   const { user, isDemo } = useAuth();
   const { push } = useToast();
+  const navigate = useNavigate();
   const [swaps, setSwaps] = useState<SwapRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -52,6 +53,21 @@ export default function Swaps() {
     }
   }
 
+  async function openChat(swap: SwapRequest) {
+    if (!user) return;
+    const otherId = swap.toUserId === user.id ? swap.fromUserId : swap.toUserId;
+    const otherName = swap.toUserId === user.id ? swap.fromName : swap.toName;
+    setBusyId(swap.id);
+    try {
+      const id = await ensureConversation(user.id, otherId, user.displayName, otherName);
+      navigate(`/messages?c=${encodeURIComponent(id)}`);
+    } catch (caught: any) {
+      push(caught?.message || "Could not open the conversation.", "error");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   const incoming = swaps.filter((swap) => swap.toUserId === user?.id);
   const outgoing = swaps.filter((swap) => swap.fromUserId === user?.id);
   const list = tab === "incoming" ? incoming : outgoing;
@@ -79,6 +95,7 @@ export default function Swaps() {
         <Skeleton lines={4} />
       ) : list.length === 0 ? (
         <EmptyState
+          icon="swap"
           title={tab === "incoming" ? "No one has asked yet" : "You have not sent a swap"}
           body={
             tab === "incoming"
@@ -108,7 +125,11 @@ export default function Swaps() {
                 </h2>
                 {swap.message && <p className="muted small">{swap.message}</p>}
                 <p className="muted small">
-                  Created {new Date(swap.createdAt).toLocaleString()}
+                  Created {new Date(swap.createdAt).toLocaleDateString(undefined, {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
                 </p>
 
                 <div className="row wrap">
@@ -143,10 +164,20 @@ export default function Swaps() {
                       <Button size="sm" onClick={() => act(swap, "completed")} loading={busyId === swap.id}>
                         Mark complete
                       </Button>
-                      <Link className="btn btn-secondary btn-sm" to="/messages">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openChat(swap)}
+                        loading={busyId === swap.id}
+                      >
                         Message
-                      </Link>
+                      </Button>
                     </>
+                  )}
+                  {swap.status === "completed" && (
+                    <Button size="sm" variant="ghost" onClick={() => openChat(swap)} loading={busyId === swap.id}>
+                      Message
+                    </Button>
                   )}
                 </div>
               </Card>

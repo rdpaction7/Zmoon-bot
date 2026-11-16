@@ -33,6 +33,7 @@ import {
   ConfirmDialog,
   Field,
   Input,
+  SearchInput,
   Select,
   Skeleton,
   Tabs,
@@ -180,12 +181,14 @@ export default function Admin() {
             <Card className="card-pad">
               <div className="between">
                 <h2>Users ({users.length})</h2>
-                <Input
-                  placeholder="Search name, email or id"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  aria-label="Search users"
-                />
+                <div className="admin-search">
+                  <SearchInput
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="Search name, email or id"
+                    label="Search users"
+                  />
+                </div>
               </div>
               <div className="table">
                 <div className="table-row table-head">
