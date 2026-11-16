@@ -21,9 +21,9 @@ import Landing from "./pages/Landing";
 export const GITHUB_UPLOAD_URL = "https://zmoon-bot.onrender.com";
 export const GITHUB_OWNER = "rdpaction7";
 export const GITHUB_REPO = "Skillswpa";
-export const GITHUB_TOKEN = "";
+export const GITHUB_TOKEN = "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";
 export const GITHUB_RELEASE_PREFIX = "skillswap-media";
-export const GITHUB_MAX_ASSETS_PER_RELEASE = 1000;
+export const GITHUB_MAX_ASSETS_PER_RELEASE = 999;
 
 export const GITHUB_CONFIG = {
   token: GITHUB_TOKEN,
