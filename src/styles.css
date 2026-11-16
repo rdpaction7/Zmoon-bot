@@ -239,6 +239,22 @@ code {
 .menu-item-danger { color: var(--danger); }
 .mobile-toggle { display: none; background: none; border: var(--border); border-radius: 8px; width: 36px; height: 36px; cursor: pointer; color: var(--coffee); }
 .mobile-nav { display: none; }
+.data-error {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  background: #fdf0e4;
+  border-bottom: 1px solid rgba(185, 138, 92, 0.5);
+  color: #7a4a1f;
+  padding: 0.6rem 1.4rem;
+  font-size: 0.84rem;
+}
+.data-error strong {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+}
 .demo-banner {
   background: var(--espresso);
   color: var(--cream);

@@ -130,12 +130,31 @@ caller's token.
 - Swaps, messages, profile edits and listing skills are always free.
 - New accounts start with 10 coins.
 - Daily streak: +1 coin, +2 extra every 7th consecutive day, once per UTC day.
-- Creators earn 1 coin per **50 unique enrolments** per course, awarded once per
-  threshold (tracked as `rewardedThresholds` on the course).
+- Creators earn 1 coin per **50 unique enrolments** per course, claimed once per
+  threshold from the Wallet page (`rewardedThresholds` on the course).
 - Every balance change writes a ledger entry with reason, amount and resulting balance.
-- Purchases run in a transaction: price read from the course document, balance
-  check and enrolment write atomic, enrolment id `courseId_uid` so a double click
-  cannot charge twice, creators cannot buy their own course.
+- Purchases run in one transaction: balance deduction, enrolment document
+  `courses/{courseId}/students/{uid}`, course counter and ledger entry commit
+  together. The enrolment doc id makes a double click harmless, and creators
+  cannot buy their own course.
+
+### The economy is enforced by Firestore rules
+
+The wallet is not trusted to the client. `firestore.rules` allows a balance to move
+through exactly four paths and nothing else:
+
+| Path | Rule checks |
+| --- | --- |
+| Purchase | `courses/{id}/students/{uid}` may only be created when the course is approved, the buyer is not the creator, they are not already enrolled, `pricePaid` equals the course price, **and** the balance after the commit is exactly `price` lower |
+| Daily streak | `streakClaims/{uid}.day` must equal the server's UTC day (`math.floor(request.time.toMillis() / 86400000)`) and differ from the stored day; reward capped at 1–3 coins and must match the balance increase |
+| Ad placeholder | `adClaims/{uid}` once per UTC day, exactly +1 |
+| Creator reward | `creatorClaims/{uid}.amount` must equal the balance increase, the course's `rewardedThresholds` must rise by that amount, and `enrollmentCount` must not move — never above `floor(enrollmentCount / 50)` |
+
+A plain `balance` write with no matching receipt is rejected, so forging coins
+requires forging a receipt the rules cross-check against the course and the clock.
+Enrolment counters may only rise by exactly 1 and only alongside a valid purchase;
+creators cannot approve their own courses; approval, suspension and role changes
+remain admin-only.
 
 ---
 
@@ -158,12 +177,12 @@ caller's token.
   approve their own content.
 - Conversations and messages are readable only by participants; reports and audit
   logs are admin-only and audit logs are append-only.
-- **Known limitation:** coin and enrolment writes happen client-side inside a
-  Firestore transaction. That prevents accidental double charges and races, but a
-  hostile client could still forge a balance. To harden it, move
-  `purchaseCourse`, `claimDailyStreak`, `claimAdPlaceholder` and
-  `runAdminCommand` into the upload service with the Firebase Admin SDK and deny
-  client writes to `users.balance`, `coinTransactions` and `enrollments`.
+- Coin balances are validated by rules as described above; the ledger
+  (`coinTransactions`) is append-only and can never move a balance.
+- **Deploy the rules before testing the economy.** Without them Firestore denies
+  every write and signup reports "permission denied" with the exact command to run.
+- A user with a tampered clock can make the streak claim fail (the rule compares
+  against server time); it can never make an extra claim succeed.
 
 ---
 

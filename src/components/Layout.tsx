@@ -229,6 +229,17 @@ export function Footer() {
   );
 }
 
+function DataErrorBanner() {
+  const { dataError } = useAuth();
+  if (!dataError) return null;
+  return (
+    <div className="data-error" role="alert">
+      <strong>Database problem</strong>
+      <span>{dataError}</span>
+    </div>
+  );
+}
+
 export function AppShell() {
   return (
     <>
@@ -237,6 +248,7 @@ export function AppShell() {
         Skip to content
       </a>
       <TopNav />
+      <DataErrorBanner />
       <main className="shell" id="main">
         <Outlet />
       </main>

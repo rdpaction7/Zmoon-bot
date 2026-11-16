@@ -68,6 +68,7 @@ export interface Course {
   price: number;
   status: CourseStatus;
   enrollmentCount: number;
+  rewardedThresholds?: number;
   createdAt: string;
   updatedAt: string;
 }

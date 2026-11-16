@@ -2,6 +2,7 @@ import {
   addDoc,
   arrayUnion,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -271,8 +272,15 @@ export async function setCourseStatus(courseId: string, status: Course["status"]
 }
 
 export async function listEnrollments(uid: string): Promise<Enrollment[]> {
-  const snap = await getDocs(query(collection(db, "enrollments"), where("userId", "==", uid)));
+  const snap = await getDocs(
+    query(collectionGroup(db, "students"), where("userId", "==", uid)),
+  );
   return snap.docs.map((entry) => dataOf<Enrollment>(entry));
+}
+
+export async function hasEnrollment(courseId: string, uid: string): Promise<boolean> {
+  const snap = await getDoc(doc(db, "courses", courseId, "students", uid));
+  return snap.exists();
 }
 
 export interface PurchaseResult {
@@ -296,7 +304,10 @@ export async function purchaseCourse(
 ): Promise<PurchaseResult> {
   const courseRef = doc(db, "courses", courseId);
   const userRef = doc(db, "users", uid);
-  const enrollmentRef = doc(db, "enrollments", `${courseId}_${uid}`);
+  // The enrolment lives at courses/{courseId}/students/{uid} so security rules
+  // can verify the exact price that was deducted for this course.
+  const studentRef = doc(db, "courses", courseId, "students", uid);
+  const ledgerRef = doc(collection(db, "coinTransactions"));
 
   const first = await getDoc(courseRef);
   if (!first.exists()) throw new Error("That course no longer exists.");
@@ -304,18 +315,14 @@ export async function purchaseCourse(
   if (courseData.status !== "approved") throw new Error("This course is not available yet.");
   if (courseData.creatorId === uid) throw new Error("You cannot purchase your own course.");
 
-  const creatorRef = doc(db, "users", courseData.creatorId);
-  const ledgerRef = doc(collection(db, "coinTransactions"));
-
   return runTransaction(db, async (tx) => {
-    const [courseSnap, userSnap, enrollSnap, creatorSnap] = await Promise.all([
+    const [courseSnap, userSnap, studentSnap] = await Promise.all([
       tx.get(courseRef),
       tx.get(userRef),
-      tx.get(enrollmentRef),
-      tx.get(creatorRef),
+      tx.get(studentRef),
     ]);
     if (!courseSnap.exists()) throw new Error("That course no longer exists.");
-    if (enrollSnap.exists()) {
+    if (studentSnap.exists()) {
       return { enrolled: true, charged: 0, alreadyEnrolled: true };
     }
     const price = clampPrice(courseSnap.data().price);
@@ -324,23 +331,19 @@ export async function purchaseCourse(
       throw new Error(`You need ${price - balance} more Skill Coins for this course.`);
     }
     const balanceAfter = balance - price;
-    const creator = creatorSnap.exists() ? creatorSnap.data() : null;
 
+    // All four writes share one transaction: security rules compare the balance
+    // after the commit with the course price before it is accepted.
     tx.update(userRef, { balance: balanceAfter, updatedAt: nowIso() });
-    tx.set(enrollmentRef, {
+    tx.set(studentRef, {
       courseId,
       userId: uid,
       pricePaid: price,
       createdAt: nowIso(),
     });
-    const newCount = Number(courseSnap.data().enrollmentCount || 0) + 1;
-    const rewarded = Number(courseSnap.data().rewardedThresholds || 0);
-    const earnedThresholds = Math.floor(newCount / 50);
-    const creatorReward = earnedThresholds > rewarded ? earnedThresholds - rewarded : 0;
-
     tx.update(courseRef, {
-      enrollmentCount: newCount,
-      rewardedThresholds: Math.max(rewarded, earnedThresholds),
+      enrollmentCount: increment(1),
+      updatedAt: nowIso(),
     });
 
     if (price > 0) {
@@ -354,31 +357,67 @@ export async function purchaseCourse(
       });
     }
 
-    if (creatorReward > 0 && creator) {
-      tx.update(creatorRef, {
-        balance: Number(creator.balance || 0) + creatorReward,
-        updatedAt: nowIso(),
-      });
-      tx.set(doc(collection(db, "coinTransactions")), {
-        userId: courseData.creatorId,
-        amount: creatorReward,
-        reason: `Creator reward — 50 unique enrolments in ${courseSnap.data().title}`,
-        courseId,
-        balanceAfter: Number(creator.balance || 0) + creatorReward,
-        createdAt: nowIso(),
-      });
-      tx.set(doc(collection(db, "notifications")), {
-        userId: courseData.creatorId,
-        type: "reward",
-        title: "Creator reward",
-        body: `You earned ${creatorReward} Skill Coin for reaching ${earnedThresholds * 50} enrolments.`,
-        link: "/wallet",
-        read: false,
-        createdAt: nowIso(),
-      });
-    }
-
     return { enrolled: true, charged: price, alreadyEnrolled: false };
+  });
+}
+
+/* --------------------------------------------------------- creator rewards */
+
+export async function creatorRewardSummary(uid: string): Promise<
+  { course: Course; earned: number; rewardable: number }[]
+> {
+  const courses = await listCourses();
+  return courses
+    .filter((course) => course.creatorId === uid)
+    .map((course) => {
+      const earned = Math.floor(Number(course.enrollmentCount || 0) / 50);
+      const claimed = Number((course as any).rewardedThresholds || 0);
+      return { course, earned, rewardable: Math.max(0, earned - claimed) };
+    });
+}
+
+/**
+ * Claims one course's creator rewards. Rules only allow the balance increase when
+ * rewardedThresholds actually rises on that course and never above
+ * floor(enrollmentCount / 50), so coins can't be minted out of thin air.
+ */
+export async function claimCreatorReward(
+  uid: string,
+  course: Course,
+  amount: number,
+): Promise<number> {
+  const courseRef = doc(db, "courses", course.id);
+  const userRef = doc(db, "users", uid);
+  const claimRef = doc(db, "creatorClaims", uid);
+  const ledgerRef = doc(collection(db, "coinTransactions"));
+
+  return runTransaction(db, async (tx) => {
+    const [courseSnap, userSnap] = await Promise.all([tx.get(courseRef), tx.get(userRef)]);
+    if (!courseSnap.exists()) throw new Error("That course no longer exists.");
+    const earned = Math.floor(Number(courseSnap.data().enrollmentCount || 0) / 50);
+    const claimed = Number(courseSnap.data().rewardedThresholds || 0);
+    const rewardable = earned - claimed;
+    if (rewardable <= 0) throw new Error("There are no rewards to claim for this course yet.");
+    const payout = Math.min(rewardable, amount);
+    const balance = Number(userSnap.data()?.balance || 0);
+
+    tx.update(courseRef, { rewardedThresholds: claimed + payout, updatedAt: nowIso() });
+    tx.set(claimRef, {
+      userId: uid,
+      courseId: course.id,
+      amount: payout,
+      createdAt: nowIso(),
+    });
+    tx.update(userRef, { balance: balance + payout, updatedAt: nowIso() });
+    tx.set(ledgerRef, {
+      userId: uid,
+      amount: payout,
+      reason: `Creator reward — ${payout * 50} unique enrolments in ${course.title}`,
+      courseId: course.id,
+      balanceAfter: balance + payout,
+      createdAt: nowIso(),
+    });
+    return payout;
   });
 }
 
@@ -404,18 +443,36 @@ export interface StreakClaimResult {
   alreadyClaimed: boolean;
 }
 
+/** UTC day index, matching the value security rules compute from request.time. */
+const dayIndex = () => Math.floor(Date.now() / 86400000);
+
+/**
+ * Daily streak claim.
+ *
+ * The reward is written together with `streakClaims/{uid}`, whose `day` must
+ * equal the server's UTC day and differ from the stored one — Firestore rules
+ * enforce both, so a second claim in the same day is rejected server-side.
+ */
 export async function claimDailyStreak(uid: string): Promise<StreakClaimResult> {
   const streakRef = doc(db, "streaks", uid);
   const userRef = doc(db, "users", uid);
+  const claimRef = doc(db, "streakClaims", uid);
   const ledgerRef = doc(collection(db, "coinTransactions"));
 
   return runTransaction(db, async (tx) => {
-    const [streakSnap, userSnap] = await Promise.all([tx.get(streakRef), tx.get(userRef)]);
+    const [streakSnap, userSnap, claimSnap] = await Promise.all([
+      tx.get(streakRef),
+      tx.get(userRef),
+      tx.get(claimRef),
+    ]);
     const data = streakSnap.exists() ? (streakSnap.data() as Streak) : null;
     const today = todayUtc();
-    if (data?.lastClaimDay === today) {
-      return { awarded: 0, streak: data.current, alreadyClaimed: true };
+    const day = dayIndex();
+
+    if (data?.lastClaimDay === today || Number(claimSnap.data()?.day ?? -1) === day) {
+      return { awarded: 0, streak: Number(data?.current || 0), alreadyClaimed: true };
     }
+
     const continued = data?.lastClaimDay === yesterdayUtc();
     const streak = continued ? Number(data?.current || 0) + 1 : 1;
     const bonus = streak % 7 === 0 ? 2 : 0;
@@ -433,6 +490,7 @@ export async function claimDailyStreak(uid: string): Promise<StreakClaimResult> 
       },
       { merge: true },
     );
+    tx.set(claimRef, { userId: uid, day, dayIso: today, amount: awarded, createdAt: nowIso() });
     tx.update(userRef, { balance: balance + awarded, updatedAt: nowIso() });
     tx.set(ledgerRef, {
       userId: uid,
@@ -447,22 +505,26 @@ export async function claimDailyStreak(uid: string): Promise<StreakClaimResult> 
 
 /**
  * Rewarded-ad placeholder. No ad provider is configured, so this records an
- * explicit "placeholder" claim (once per UTC day) and never pretends a real ad
- * was watched.
+ * explicit, labelled placeholder claim (once per UTC day, enforced by rules) and
+ * never pretends a real ad was watched.
  */
 export async function claimAdPlaceholder(uid: string): Promise<{ awarded: number; alreadyClaimed: boolean }> {
-  const claimRef = doc(db, "rewardClaims", `${uid}_ad_${todayUtc()}`);
+  const claimRef = doc(db, "adClaims", uid);
   const userRef = doc(db, "users", uid);
   const ledgerRef = doc(collection(db, "coinTransactions"));
+  const day = dayIndex();
 
   return runTransaction(db, async (tx) => {
     const [claimSnap, userSnap] = await Promise.all([tx.get(claimRef), tx.get(userRef)]);
-    if (claimSnap.exists()) return { awarded: 0, alreadyClaimed: true };
+    if (Number(claimSnap.data()?.day ?? -1) === day) {
+      return { awarded: 0, alreadyClaimed: true };
+    }
     const balance = Number(userSnap.data()?.balance || 0);
     tx.set(claimRef, {
       userId: uid,
       type: "ad_placeholder",
-      day: todayUtc(),
+      day,
+      dayIso: todayUtc(),
       amount: 1,
       verified: false,
       createdAt: nowIso(),

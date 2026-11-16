@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../state/AuthContext";
 import {
   claimAdPlaceholder,
+  claimCreatorReward,
   claimDailyStreak,
+  creatorRewardSummary,
   getStreak,
   listTransactions,
 } from "../lib/api";
-import type { CoinTransaction, Streak } from "../lib/types";
+import type { CoinTransaction, Course, Streak } from "../lib/types";
 import { Badge, Button, Card, EmptyState, Skeleton, Stat, useToast } from "../components/ui";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -19,6 +21,7 @@ export default function Wallet() {
   const { push } = useToast();
   const [transactions, setTransactions] = useState<CoinTransaction[]>([]);
   const [streak, setStreak] = useState<Streak | null>(null);
+  const [rewards, setRewards] = useState<{ course: Course; rewardable: number; earned: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -26,12 +29,14 @@ export default function Wallet() {
   async function load() {
     if (!user) return;
     try {
-      const [ledger, streakData] = await Promise.all([
+      const [ledger, streakData, summary] = await Promise.all([
         listTransactions(user.id),
         getStreak(user.id),
+        creatorRewardSummary(user.id).catch(() => []),
       ]);
       setTransactions(ledger);
       setStreak(streakData);
+      setRewards(summary.filter((entry) => entry.rewardable > 0 || entry.earned > 0));
       setError("");
     } catch (caught: any) {
       setError(caught?.message || "Could not load your wallet.");
@@ -59,6 +64,21 @@ export default function Wallet() {
       await load();
     } catch (caught: any) {
       push(caught?.message || "Could not claim your streak.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function claimCreator(entry: { course: Course; rewardable: number }) {
+    if (!user) return;
+    setBusy(true);
+    try {
+      const paid = await claimCreatorReward(user.id, entry.course, entry.rewardable);
+      push(`Claimed ${paid} Skill Coin${paid === 1 ? "" : "s"} for "${entry.course.title}".`, "success");
+      await refreshProfile().catch(() => {});
+      await load();
+    } catch (caught: any) {
+      push(caught?.message || "Could not claim creator rewards.", "error");
     } finally {
       setBusy(false);
     }
@@ -150,6 +170,38 @@ export default function Wallet() {
               Missed days reset your streak to day 1. Days use UTC so the reward is the same everywhere.
             </p>
           </Card>
+
+          {rewards.length > 0 && (
+            <Card className="card-pad">
+              <div className="between">
+                <h2>Creator rewards</h2>
+                <Badge tone="accent">1 coin per 50 enrolments</Badge>
+              </div>
+              <p className="muted small">
+                Claimed once per threshold. Security rules only release coins when the course
+                actually crossed a 50-enrolment boundary.
+              </p>
+              <div className="stack">
+                {rewards.map((entry) => (
+                  <div className="list-row" key={entry.course.id}>
+                    <div>
+                      <strong className="small">{entry.course.title}</strong>
+                      <p className="muted small">
+                        {entry.course.enrollmentCount || 0} enrolments · {entry.earned} thresholds reached
+                      </p>
+                    </div>
+                    {entry.rewardable > 0 ? (
+                      <Button size="sm" onClick={() => claimCreator(entry)} loading={busy} disabled={isDemo}>
+                        Claim {entry.rewardable}
+                      </Button>
+                    ) : (
+                      <Badge tone="positive">all claimed</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card className="card-pad">
             <h2>Transaction history</h2>

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInAnonymously,
@@ -33,6 +34,21 @@ interface AuthState {
 }
 
 const AuthContext = createContext<AuthState | null>(null);
+
+/** Turns Firestore/auth failures into something a human can act on. */
+export function friendlyDataError(error: any): string {
+  const code = String(error?.code || "");
+  if (code.includes("permission-denied") || /insufficient permissions/i.test(error?.message || "")) {
+    return "The database rejected this write (permission denied). Deploy the Firestore rules with: firebase deploy --only firestore:rules";
+  }
+  if (code.includes("unavailable") || /offline/i.test(error?.message || "")) {
+    return "We could not reach the database. Your session is still active — retry when you are back online.";
+  }
+  if (code.includes("failed-precondition")) {
+    return "The database needs an index for this query. Deploy firestore.indexes.json (firebase deploy --only firestore:indexes).";
+  }
+  return error?.message || "Something went wrong talking to the database.";
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -78,15 +94,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(fallback);
           } catch (error: any) {
             setUser(fallback);
-            setDataError(error?.message || "Could not load your profile.");
+            setDataError(friendlyDataError(error));
           }
         }
       } catch (error: any) {
-        setDataError(
-          error?.code === "unavailable" || error?.message?.includes("offline")
-            ? "We could not reach the database. Your session is still active — retry when you are back online."
-            : error?.message || "Could not load your profile.",
-        );
+        setDataError(friendlyDataError(error));
       } finally {
         setLoading(false);
       }
@@ -104,7 +116,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isDemo: Boolean(user?.demo),
       async signUp({ email, password, username, displayName }) {
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        await updateProfile(cred.user, { displayName });
         const cleanEmail = email.trim().toLowerCase();
         const profile: UserProfile = {
           id: cred.user.uid,
@@ -118,8 +129,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           balance: 10,
           demo: false,
         };
-        await createProfile(profile);
-        setUser(profile);
+        try {
+          await updateProfile(cred.user, { displayName });
+          await createProfile(profile);
+          setUser(profile);
+        } catch (error: any) {
+          // Do not leave a signed-in account with no profile behind: roll the
+          // auth user back so the address can be used again once rules are fixed.
+          try {
+            await deleteUser(cred.user);
+          } catch {
+            /* best effort */
+          }
+          throw new Error(friendlyDataError(error));
+        }
       },
       async signIn(email, password) {
         await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -147,8 +170,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
         try {
           await createProfile(profile);
-        } catch {
-          /* demo browsing still works without a stored profile */
+        } catch (error: any) {
+          setDataError(friendlyDataError(error));
         }
         setUser(profile);
       },

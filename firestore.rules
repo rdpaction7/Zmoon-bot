@@ -3,6 +3,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    /* ---------------------------------------------------------------- helpers */
+
     function signedIn() {
       return request.auth != null;
     }
@@ -26,22 +28,134 @@ service cloud.firestore {
         || request.resource.data[field] == resource.data[field];
     }
 
-    // Users may edit their own profile. Role and account status are never
-    // self-assignable; only the admin email allowlist can create an admin.
+    function balanceDelta() {
+      return request.resource.data.balance - resource.data.balance;
+    }
+
+    // UTC day index computed from server time, so a client cannot fake "tomorrow".
+    function utcDay() {
+      return math.floor(request.time.toMillis() / 86400000);
+    }
+
+    function streakClaim() {
+      return getAfter(/databases/$(database)/documents/streakClaims/$(request.auth.uid));
+    }
+
+    function adClaim() {
+      return getAfter(/databases/$(database)/documents/adClaims/$(request.auth.uid));
+    }
+
+    function creatorClaim() {
+      return getAfter(/databases/$(database)/documents/creatorClaims/$(request.auth.uid));
+    }
+
+    function creatorClaimCourseBefore() {
+      return get(/databases/$(database)/documents/courses/$(creatorClaim().courseId));
+    }
+
+    function creatorClaimCourseAfter() {
+      return getAfter(/databases/$(database)/documents/courses/$(creatorClaim().courseId));
+    }
+
+    /* Daily streak: at most one claim per UTC day, reward 1–3 coins, and the
+       reward must equal the amount recorded on the claim document itself. */
+    function streakRewardOk() {
+      return existsAfter(/databases/$(database)/documents/streakClaims/$(request.auth.uid))
+        && streakClaim().day == utcDay()
+        && streakClaim().amount == balanceDelta()
+        && balanceDelta() >= 1
+        && balanceDelta() <= 3;
+    }
+
+    /* Rewarded-ad placeholder: exactly 1 coin, once per UTC day. */
+    function adRewardOk() {
+      return existsAfter(/databases/$(database)/documents/adClaims/$(request.auth.uid))
+        && adClaim().day == utcDay()
+        && adClaim().amount == balanceDelta()
+        && balanceDelta() == 1;
+    }
+
+    /* Creator reward: the payout must match the rise in that course's
+       rewardedThresholds and the enrolment count must not move. */
+    function creatorRewardOk(uid) {
+      return existsAfter(/databases/$(database)/documents/creatorClaims/$(uid))
+        && creatorClaim().userId == uid
+        && creatorClaim().amount == balanceDelta()
+        && balanceDelta() >= 1
+        && creatorClaimCourseAfter().rewardedThresholds
+           - creatorClaimCourseBefore().rewardedThresholds == balanceDelta()
+        && creatorClaimCourseAfter().enrollmentCount
+           == creatorClaimCourseBefore().enrollmentCount;
+    }
+
+    /* ----------------------------------------------------------------- users */
+
     match /users/{uid} {
       allow read: if signedIn();
+
       allow create: if isSelf(uid)
         && request.resource.data.id == uid
+        && request.resource.data.balance >= 0
         && (
           request.resource.data.role == 'user'
           || (request.resource.data.role == 'admin' && adminEmail())
         );
+
+      // Profile edits are free. Coins may only move through the three validated
+      // paths below — a plain balance write is rejected.
       allow update: if isSelf(uid)
         && unchanged('role')
         && unchanged('status')
-        && unchanged('email');
+        && unchanged('email')
+        && (
+          balanceDelta() == 0
+          // spending is limited to a single course price (1–50)
+          || (balanceDelta() < 0 && balanceDelta() >= -50)
+          || streakRewardOk()
+          || adRewardOk()
+          || creatorRewardOk(uid)
+        );
+
       allow update: if isAdmin();
       allow delete: if isAdmin();
+    }
+
+    /* ------------------------------------------------------- reward receipts */
+
+    match /streakClaims/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow create, update: if isSelf(uid)
+        && request.resource.data.userId == uid
+        && request.resource.data.day == utcDay()
+        && request.resource.data.amount >= 1
+        && request.resource.data.amount <= 3
+        && (
+          !exists(/databases/$(database)/documents/streakClaims/$(uid))
+          || get(/databases/$(database)/documents/streakClaims/$(uid)).data.day != utcDay()
+        );
+      allow delete: if false;
+    }
+
+    match /adClaims/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow create, update: if isSelf(uid)
+        && request.resource.data.userId == uid
+        && request.resource.data.day == utcDay()
+        && request.resource.data.amount == 1
+        && (
+          !exists(/databases/$(database)/documents/adClaims/$(uid))
+          || get(/databases/$(database)/documents/adClaims/$(uid)).data.day != utcDay()
+        );
+      allow delete: if false;
+    }
+
+    match /creatorClaims/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow create, update: if isSelf(uid)
+        && request.resource.data.userId == uid
+        && request.resource.data.amount >= 1
+        && request.resource.data.amount <= 1000;
+      allow delete: if false;
     }
 
     match /streaks/{uid} {
@@ -49,30 +163,26 @@ service cloud.firestore {
       allow write: if isSelf(uid) || isAdmin();
     }
 
-    match /rewardClaims/{claimId} {
-      allow read: if isAdmin() || claimId.matches(request.auth.uid + '.*');
-      allow create: if signedIn() && claimId.matches(request.auth.uid + '.*');
-      allow update, delete: if isAdmin();
-    }
-
     match /usernames/{username} {
       allow read: if signedIn();
-      allow create, update: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+
+    /* ---------------------------------------------------------------- skills */
 
     match /skills/{skillId} {
       allow read: if signedIn();
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.status == 'pending';
-      allow update: if signedIn()
-        && (
-          (resource.data.ownerId == request.auth.uid && unchanged('status') && unchanged('ownerId'))
-          || isAdmin()
-          || (request.resource.data.status == 'pending'
-              && resource.data.ownerId == request.auth.uid)
-        );
+      allow update: if signedIn() && (
+        (resource.data.ownerId == request.auth.uid
+          && unchanged('status')
+          && unchanged('ownerId'))
+        || isAdmin()
+      );
       allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
@@ -81,53 +191,117 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    /* ----------------------------------------------------------------- swaps */
+
     match /swapRequests/{swapId} {
-      allow read: if signedIn()
-        && (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid || isAdmin());
+      allow read: if signedIn() && (
+        resource.data.fromUserId == request.auth.uid
+        || resource.data.toUserId == request.auth.uid
+        || isAdmin()
+      );
       allow create: if signedIn()
         && request.resource.data.fromUserId == request.auth.uid
         && request.resource.data.toUserId != request.auth.uid
         && request.resource.data.status == 'pending';
-      allow update: if signedIn()
-        && (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid || isAdmin());
+      allow update: if signedIn() && (
+        resource.data.fromUserId == request.auth.uid
+        || resource.data.toUserId == request.auth.uid
+        || isAdmin()
+      );
       allow delete: if isAdmin();
     }
 
+    /* --------------------------------------------------------------- courses */
+
     match /courses/{courseId} {
       allow read: if signedIn();
+
       allow create: if signedIn()
         && request.resource.data.creatorId == request.auth.uid
         && request.resource.data.status == 'draft'
         && request.resource.data.price is number
         && request.resource.data.price >= 0
-        && request.resource.data.price <= 50;
-      allow update: if signedIn()
-        && (
-          // creators edit their own course but cannot approve it themselves
-          (resource.data.creatorId == request.auth.uid && (
-            (request.resource.data.status in ['draft', 'pending']
+        && request.resource.data.price <= 50
+        && request.resource.data.enrollmentCount == 0
+        && request.resource.data.rewardedThresholds == 0;
+
+      allow update: if signedIn() && (
+        // A learner enrols: exactly one counter step, and only together with the
+        // enrolment document that proves they paid the course price.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enrollmentCount', 'updatedAt'])
+          && request.resource.data.enrollmentCount == resource.data.enrollmentCount + 1
+          && existsAfter(/databases/$(database)/documents/courses/$(courseId)/students/$(request.auth.uid)))
+
+        // The creator edits their own course but can never approve it, change the
+        // enrolment counter, or pay themselves more than the enrolment thresholds.
+        || (resource.data.creatorId == request.auth.uid
+          && unchanged('creatorId')
+          && unchanged('enrollmentCount')
+          && (
+            // Editing content keeps the existing status, and submitting for review
+            // is the only status a creator may set. Approval stays admin-only.
+            ((request.resource.data.status == resource.data.status
+                || request.resource.data.status == 'pending')
+              && unchanged('rewardedThresholds')
               && request.resource.data.price >= 0
               && request.resource.data.price <= 50)
-            || request.resource.data.status == resource.data.status
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rewardedThresholds', 'updatedAt'])
+              && request.resource.data.rewardedThresholds > resource.data.rewardedThresholds
+              && request.resource.data.rewardedThresholds <= math.floor(resource.data.enrollmentCount / 50))
           ))
-          // any signed-in learner may bump counters through enrolment
-          || (isAdmin())
-        );
+
+        || isAdmin()
+      );
+
       allow delete: if isAdmin();
+
+      /* The purchase anchor. Rules compare the balance after the commit with the
+         price on the course, so a learner cannot pay less than the asking price,
+         enrol for free in a paid course, buy their own course, or enrol twice. */
+      match /students/{uid} {
+        allow read: if signedIn();
+        allow create: if isSelf(uid)
+          && request.resource.data.userId == uid
+          && request.resource.data.courseId == courseId
+          && request.resource.data.pricePaid == get(/databases/$(database)/documents/courses/$(courseId)).data.price
+          && get(/databases/$(database)/documents/courses/$(courseId)).data.status == 'approved'
+          && get(/databases/$(database)/documents/courses/$(courseId)).data.creatorId != uid
+          && !exists(/databases/$(database)/documents/courses/$(courseId)/students/$(uid))
+          && get(/databases/$(database)/documents/users/$(uid)).data.balance >= request.resource.data.pricePaid
+          && getAfter(/databases/$(database)/documents/users/$(uid)).data.balance
+             == get(/databases/$(database)/documents/users/$(uid)).data.balance - request.resource.data.pricePaid;
+        allow update, delete: if isAdmin();
+      }
     }
 
+    // Legacy top-level mirror: read-only, writes are refused.
     match /enrollments/{enrollmentId} {
       allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow write: if false;
     }
 
     match /coinTransactions/{transactionId} {
       allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      // A ledger entry can be written by its owner (or by an admin adjusting a
+      // balance) but never edited, and the ledger itself cannot move coins.
+      allow create: if signedIn()
+        && (request.resource.data.userId == request.auth.uid || isAdmin());
       allow update, delete: if false;
     }
+
+    /* --------------------------------------------------------------- reviews */
+
+    match /reviews/{reviewId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    /* --------------------------------------------------------- notifications */
 
     match /notifications/{notificationId} {
       allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
@@ -135,6 +309,8 @@ service cloud.firestore {
       allow update: if signedIn() && resource.data.userId == request.auth.uid;
       allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
+
+    /* ------------------------------------------------------------- messaging */
 
     match /conversations/{conversationId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
@@ -147,18 +323,11 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.resource.data.senderId == request.auth.uid
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+        allow update, delete: if false;
       }
     }
 
-    match /reviews/{reviewId} {
-      allow read: if signedIn();
-      allow create, update: if signedIn()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.rating is number
-        && request.resource.data.rating >= 1
-        && request.resource.data.rating <= 5;
-      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
-    }
+    /* ------------------------------------------------------- moderation logs */
 
     match /reports/{reportId} {
       allow create: if signedIn() && request.resource.data.reporterId == request.auth.uid;

@@ -1,6 +1,11 @@
 {
   "indexes": [
     {
+      "collectionGroup": "students",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [{ "fieldPath": "userId", "order": "ASCENDING" }]
+    },
+    {
       "collectionGroup": "swapRequests",
       "queryScope": "COLLECTION",
       "fields": [
